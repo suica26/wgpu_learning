@@ -3,8 +3,12 @@ use std::sync::Arc;
 use log::{error, info};
 use pollster::block_on;
 use wgpu::{DeviceDescriptor, Instance, InstanceDescriptor, RenderPassDescriptor, RequestAdapterOptions, SurfaceCapabilities, SurfaceConfiguration, SurfaceError};
+use wgpu::util::{DeviceExt, RenderEncoder};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
+
+use crate::system::vertex;
+use crate::system::vertex::Vertex;
 
 /// 描画を行う構造体
 pub struct Renderer<'a> {
@@ -14,6 +18,9 @@ pub struct Renderer<'a> {
     pub surface_caps: SurfaceCapabilities,
     pub surface_format: wgpu::TextureFormat,
     pub render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    num_vertices: u32,
 }
 
 impl<'a> Renderer<'a> {
@@ -102,7 +109,7 @@ impl<'a> Renderer<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[],
+                buffers: &[Vertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -134,6 +141,22 @@ impl<'a> Renderer<'a> {
             cache: None,
         });
 
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(vertex::VERTICES),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(vertex::INDICES),
+                usage: wgpu::BufferUsages::INDEX,
+            }
+        );
+
         Self {
             surface,
             device,
@@ -141,6 +164,9 @@ impl<'a> Renderer<'a> {
             surface_caps,
             surface_format,
             render_pipeline,
+            vertex_buffer,
+            index_buffer,
+            num_vertices: vertex::INDICES.len() as u32,
         }
     }
 
@@ -170,7 +196,7 @@ impl<'a> Renderer<'a> {
         });
 
         {
-            let mut _render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -190,8 +216,10 @@ impl<'a> Renderer<'a> {
                 timestamp_writes: None,
             });
 
-            _render_pass.set_pipeline(&self.render_pipeline);
-            _render_pass.draw(0..3, 0..1);
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.num_vertices, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
