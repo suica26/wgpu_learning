@@ -46,11 +46,13 @@ impl<'a> ApplicationHandler for Application<'a> {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => self.close_requested(event_loop),
-            WindowEvent::KeyboardInput { device_id, event, is_synthetic } => self.keyboard_input(device_id, event, is_synthetic),
+            WindowEvent::KeyboardInput { event, .. } => self.keyboard_input(event),
             WindowEvent::RedrawRequested => self.redraw_requested(),
             WindowEvent::Resized(size) => self.renderer.as_mut().unwrap().resize(size.width, size.height),
             _ => {}
         }
+
+        self.update();
     }
 }
 
@@ -60,12 +62,13 @@ impl<'a> Application<'a> {
         event_loop.exit();
     }
 
-    fn keyboard_input(&self, device_id: DeviceId, event: KeyEvent, is_synthetic: bool) {
-        debug!("Keyboard input: {:?}", event);
+    fn keyboard_input(&mut self, event: KeyEvent) {
         if event.logical_key == Named(Escape) {
             println!("The escape key was pressed; stopping");
             process::exit(0);
         }
+
+        self.renderer.as_mut().unwrap().key_input(&event);
     }
 
     fn redraw_requested(&mut self) {
@@ -91,5 +94,7 @@ impl<'a> Application<'a> {
         }
     }
 
-    fn update(&mut self) {}
+    fn update(&mut self) {
+        self.renderer.as_mut().unwrap().update();
+    }
 }
