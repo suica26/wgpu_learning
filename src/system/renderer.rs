@@ -35,7 +35,7 @@ pub struct Renderer<'a> {
 impl<'a> Renderer<'a> {
     pub fn new(window: Arc<Window>) -> Self {
         let instance = wgpu::Instance::new(
-            wgpu::InstanceDescriptor {
+            &wgpu::InstanceDescriptor {
                 backends: wgpu::Backends::all(),
                 ..Default::default()
             });
