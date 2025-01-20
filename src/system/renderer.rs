@@ -2,7 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use image::GenericImageView;
-use log::{error, info};
+use log::{debug, error, info};
 use pollster::block_on;
 use wgpu::util::{DeviceExt, RenderEncoder};
 use wgpu::WasmNotSend;
@@ -167,7 +167,7 @@ impl<'a> Renderer<'a> {
             }
         );
 
-        let camera_controller = camera_controller::CameraController::new(0.2);
+        let camera_controller = camera_controller::CameraController::new(0.1);
 
         let render_pipeline = Self::create_render_pipeline(
             &device,
@@ -176,10 +176,12 @@ impl<'a> Renderer<'a> {
             surface_format,
         );
 
+        let (sphere_vertices, sphere_indices) = vertex::Vertex::create_sphere(8, 1.0);
+
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(vertex::VERTICES),
+                contents: bytemuck::cast_slice(&sphere_vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             }
         );
@@ -187,7 +189,7 @@ impl<'a> Renderer<'a> {
         let index_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(vertex::INDICES),
+                contents: bytemuck::cast_slice(&sphere_indices),
                 usage: wgpu::BufferUsages::INDEX,
             }
         );
@@ -201,7 +203,7 @@ impl<'a> Renderer<'a> {
             render_pipeline,
             vertex_buffer,
             index_buffer,
-            num_vertices: vertex::INDICES.len() as u32,
+            num_vertices: sphere_indices.len() as u32,
             diffuse_bind_group,
             diffuse_texture,
             camera,
@@ -358,22 +360,15 @@ impl Renderer<'_> {
             &wgpu::RenderPipelineDescriptor {
                 label: Some("Render Pipeline"),
                 layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[vertex::Vertex::desc()],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
+                vertex: Self::create_vertex_state(&shader, &[vertex::Vertex::desc()]),
+                fragment: Self::create_fragment_state(
+                    &shader,
+                    &[Some(wgpu::ColorTargetState {
                         format: surface_format,
                         blend: Some(wgpu::BlendState::REPLACE),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
+                    surface_format),
                 primitive: Self::create_primitive_state(),
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState {
@@ -387,8 +382,33 @@ impl Renderer<'_> {
         )
     }
 
+    fn create_vertex_state<'a>(
+        shader: &'a wgpu::ShaderModule,
+        buffers: &'a [wgpu::VertexBufferLayout])
+        -> wgpu::VertexState<'a> {
+        wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            buffers,
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }
+    }
+
+    fn create_fragment_state<'a>(
+        shader: &'a wgpu::ShaderModule,
+        targets: &'a [Option<wgpu::ColorTargetState>],
+        surface_format: wgpu::TextureFormat)
+        -> Option<wgpu::FragmentState<'a>> {
+        Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets,
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        })
+    }
+
     fn create_primitive_state() -> wgpu::PrimitiveState {
-        wgpu::PrimitiveState {
+        return wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
@@ -396,6 +416,6 @@ impl Renderer<'_> {
             polygon_mode: wgpu::PolygonMode::Fill,
             unclipped_depth: false,
             conservative: false,
-        }
+        };
     }
 }

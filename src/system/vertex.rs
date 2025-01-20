@@ -1,3 +1,5 @@
+use log::debug;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
@@ -38,5 +40,98 @@ impl Vertex {
                 },
             ],
         }
+    }
+
+    pub fn create_sphere(div: u16, radius: f32) -> (Vec<Vertex>, Vec<u16>) {
+        let pi = std::f32::consts::PI;
+
+        let mut vertices = vec![];
+        let mut indices = vec![];
+
+        let div_f32 = div as f32;
+
+        let y_unit = 2.0 * radius / div_f32;
+        let y_angle_unit = pi / div_f32;
+        let xz_angle_unit = 2.0 * pi / div_f32;
+
+        let top = radius;
+
+        // 上側の頂点
+        vertices.push(Vertex {
+            position: [0.0, top, 0.0],
+            tex_coords: [0.0, 1.0],
+        });
+
+        // y軸方向のループ
+        let y_loop_count = div - 1;
+        for i in 1..=y_loop_count {
+            let i_f32 = i as f32;
+            let cos_y = (y_angle_unit * i_f32).cos();
+
+            let y = radius * cos_y;
+            let xy_radius = radius * (y_angle_unit * i_f32).sin();
+
+            // xz平面上の角度ループ
+            for j in 0..div {
+                let j_f32 = j as f32;
+                let cos_xz = (xz_angle_unit * j_f32).cos();
+                let sin_xz = (xz_angle_unit * j_f32).sin();
+
+                let x = xy_radius * cos_xz;
+                let z = xy_radius * sin_xz;
+
+                vertices.push(Vertex {
+                    position: [x, y, z],
+                    tex_coords: [cos_xz * 0.5 + 0.5, sin_xz * 0.5 + 0.5],
+                });
+            }
+        }
+
+        // 下側の頂点
+        vertices.push(Vertex {
+            position: [0.0, -top, 0.0],
+            tex_coords: [0.0, 0.0],
+        });
+
+        // 上側の三角形
+        for i in 0..div {
+            let next_i = if i == div - 1 { 1 } else { i + 1 };
+
+            indices.push(0);
+            indices.push(next_i + 1);
+            indices.push(i + 1);
+        }
+
+        // 中間部分の三角形
+        for i in 0..y_loop_count {
+            let offset = 1 + i * div;
+
+            for j in 0..div {
+                let next_j = if j == div - 1 { 0 } else { j + 1 };
+                let next_offset = offset + div;
+
+                indices.push(offset + j);
+                indices.push(next_offset + next_j);
+                indices.push(next_offset + j);
+
+                indices.push(offset + j);
+                indices.push(offset + next_j);
+                indices.push(next_offset + next_j);
+            }
+        }
+
+        // 下側の三角形
+        let last = (vertices.len() as u16) - 1;
+        debug!("last: {}", last);
+        let offset = last - div;
+        for i in 0..div {
+            let next_i = if i == div - 1 { 0 } else { i + 1 };
+
+            indices.push(offset + i);
+            indices.push(offset + next_i);
+            indices.push(last);
+        }
+
+        (vertices, indices)
     }
 }
