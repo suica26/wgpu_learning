@@ -1,3 +1,6 @@
+use std::ops::Index;
+use std::process::id;
+
 use log::debug;
 
 #[repr(C)]
@@ -122,7 +125,6 @@ impl Vertex {
 
         // 下側の三角形
         let last = (vertices.len() as u16) - 1;
-        debug!("last: {}", last);
         let offset = last - div;
         for i in 0..div {
             let next_i = if i == div - 1 { 0 } else { i + 1 };
@@ -132,6 +134,53 @@ impl Vertex {
             indices.push(last);
         }
 
+        Self::log_create_sphere(&vertices, &indices, div);
+
         (vertices, indices)
+    }
+
+    fn log_create_sphere(vertices: &Vec<Vertex>, indices: &Vec<u16>, div: u16) {
+        let mut output_str = String::new();
+        for (i, v) in vertices.iter().enumerate() {
+            if i > 0 {
+                if (i as u16 - 1) % div == 0 {
+                    output_str.push_str("\n");
+                }
+            }
+
+            output_str.push_str(&format!("{:?} {:?}\n", i, v.position));
+        }
+
+        output_str.push_str("\n");
+
+        for i in 0..indices.len() / 3 {
+            if i as u16 % div == 0 {
+                output_str.push_str("\n");
+            }
+
+            let idx = i * 3;
+            output_str.push_str(&format!("{:?} {:?} {:?}\n", indices[idx], indices[idx + 1], indices[idx + 2]));
+        }
+        debug!("{}", output_str);
+
+        {
+            use std::io::prelude::*;
+            use std::io::BufWriter;
+            use std::fs::File;
+            use std::path::Path;
+
+            let path = Path::new("vertices_indices.txt");
+            let mut file = match File::create(&path) {
+                Ok(f) => f,
+                Err(e) => panic!("File Create Error: {:?}", e),
+            };
+
+            debug!("File created: {:?}", file.metadata());
+
+            match file.write(output_str.as_bytes()) {
+                Ok(_) => debug!("Write success"),
+                Err(e) => panic!("File Write Error: {:?}", e),
+            };
+        }
     }
 }

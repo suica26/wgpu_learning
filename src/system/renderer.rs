@@ -176,7 +176,7 @@ impl<'a> Renderer<'a> {
             surface_format,
         );
 
-        let (sphere_vertices, sphere_indices) = vertex::Vertex::create_sphere(8, 1.0);
+        let (sphere_vertices, sphere_indices) = vertex::Vertex::create_sphere(6, 1.0);
 
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
