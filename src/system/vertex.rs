@@ -66,8 +66,7 @@ impl Vertex {
         });
 
         // y軸方向のループ
-        let y_loop_count = div - 1;
-        for i in 1..=y_loop_count {
+        for i in 1..=(div - 1) {
             let i_f32 = i as f32;
             let cos_y = (y_angle_unit * i_f32).cos();
 
@@ -106,7 +105,7 @@ impl Vertex {
         }
 
         // 中間部分の三角形
-        for i in 0..y_loop_count {
+        for i in 0..(div - 2) {
             let offset = 1 + i * div;
 
             for j in 0..div {
