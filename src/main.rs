@@ -6,6 +6,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use crate::system::application::Application;
 
 mod system;
+mod primitive_shapes;
 
 fn main() {
     env::set_var("RUST_LOG", "debug");

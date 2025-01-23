@@ -10,6 +10,7 @@ use winit::dpi::PhysicalSize;
 use winit::event::KeyEvent;
 use winit::window::Window;
 
+use crate::primitive_shapes;
 use crate::system::{camera, camera_controller, texture, vertex};
 
 /// 描画を行う構造体
@@ -176,12 +177,12 @@ impl<'a> Renderer<'a> {
             surface_format,
         );
 
-        let (sphere_vertices, sphere_indices) = vertex::Vertex::create_sphere(6, 1.0);
+        let sphere = primitive_shapes::sphere::Sphere::new(4, 1.0);
 
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(&sphere_vertices),
+                contents: bytemuck::cast_slice(&sphere.vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             }
         );
@@ -189,7 +190,7 @@ impl<'a> Renderer<'a> {
         let index_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(&sphere_indices),
+                contents: bytemuck::cast_slice(&sphere.indices),
                 usage: wgpu::BufferUsages::INDEX,
             }
         );
@@ -203,7 +204,7 @@ impl<'a> Renderer<'a> {
             render_pipeline,
             vertex_buffer,
             index_buffer,
-            num_vertices: sphere_indices.len() as u32,
+            num_vertices: sphere.indices.len() as u32,
             diffuse_bind_group,
             diffuse_texture,
             camera,
@@ -367,8 +368,7 @@ impl Renderer<'_> {
                         format: surface_format,
                         blend: Some(wgpu::BlendState::REPLACE),
                         write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    surface_format),
+                    })]),
                 primitive: Self::create_primitive_state(),
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState {
@@ -396,8 +396,7 @@ impl Renderer<'_> {
 
     fn create_fragment_state<'a>(
         shader: &'a wgpu::ShaderModule,
-        targets: &'a [Option<wgpu::ColorTargetState>],
-        surface_format: wgpu::TextureFormat)
+        targets: &'a [Option<wgpu::ColorTargetState>])
         -> Option<wgpu::FragmentState<'a>> {
         Some(wgpu::FragmentState {
             module: &shader,
