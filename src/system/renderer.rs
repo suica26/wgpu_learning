@@ -177,7 +177,7 @@ impl<'a> Renderer<'a> {
             surface_format,
         );
 
-        let sphere = primitive_shapes::sphere::Sphere::new(31, 1.0);
+        let sphere = primitive_shapes::sphere::Sphere::new(16, 1.0);
 
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {

@@ -177,8 +177,8 @@ impl Sphere {
     fn create_indices(div: u16, vertices_num: u16) -> Vec<u16> {
         let mut indices = vec![];
 
-        for i in 0..div {
-            let next_i = if i == div - 1 { 0 } else { i + 1 };
+        for i in 1..=div {
+            let next_i = if i == div { 1 } else { i + 1 };
 
             indices.push(0);
             indices.push(next_i);
