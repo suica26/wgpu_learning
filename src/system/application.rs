@@ -2,7 +2,6 @@ use std::process;
 use std::sync::Arc;
 
 use log::{debug, error, info};
-use wgpu::{RenderPassDescriptor, SurfaceError};
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceId, KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
