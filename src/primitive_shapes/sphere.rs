@@ -22,7 +22,7 @@ impl Sphere {
             Self::create_by_indivisible(div, radius)
         };
 
-        Self::log_create_sphere(&vertices, &indices, div);
+        // Self::log_create_sphere(&vertices, &indices, div);
 
         Self {
             div,

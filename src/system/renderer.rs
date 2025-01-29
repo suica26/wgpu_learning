@@ -79,8 +79,8 @@ impl<'a> Renderer<'a> {
         let diffuse_texture = texture::Texture::from_bytes(
             &device,
             &queue,
-            include_bytes!("../happy-tree.png"),
-            "happy-tree.png")
+            include_bytes!("../../resource/happy-tree.png"),
+            "happy-tree")
             .unwrap();
 
         let texture_bind_group_layout = device.create_bind_group_layout(
@@ -344,7 +344,7 @@ impl Renderer<'_> {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         surface_format: wgpu::TextureFormat,
     ) -> wgpu::RenderPipeline {
-        let shader = device.create_shader_module(wgpu::include_wgsl!("../shader.wgsl"));
+        let shader = device.create_shader_module(wgpu::include_wgsl!("../../shader/shader.wgsl"));
 
         let render_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
