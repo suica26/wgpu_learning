@@ -1,13 +1,12 @@
 use log::{debug, error};
 
+use crate::system::primitive_shapes::shape_geometry::ShapeGeometry;
 use crate::system::vertex::Vertex;
 
 pub struct Sphere {
     pub div: u16,
     pub radius: f32,
-
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u16>,
+    pub geometry: ShapeGeometry,
 }
 
 impl Sphere {
@@ -24,11 +23,12 @@ impl Sphere {
 
         // Self::log_create_sphere(&vertices, &indices, div);
 
+        let geometry = ShapeGeometry::from(vertices, indices);
+
         Self {
             div,
             radius,
-            vertices,
-            indices,
+            geometry,
         }
     }
 }

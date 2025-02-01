@@ -10,8 +10,13 @@ use winit::dpi::PhysicalSize;
 use winit::event::KeyEvent;
 use winit::window::Window;
 
-use crate::primitive_shapes;
-use crate::system::{camera, camera_controller, texture, vertex};
+use crate::system::{primitive_shapes, texture, vertex};
+use crate::system::camera;
+use crate::system::camera::{Camera, CameraUniform};
+use crate::system::camera_controller;
+use crate::system::camera_controller::CameraController;
+use crate::system::primitive_shapes::shape_geometry_buffers::ShapeGeometryBuffers;
+use crate::system::texture::Texture;
 
 /// 描画を行う構造体
 pub struct Renderer<'a> {
@@ -21,14 +26,12 @@ pub struct Renderer<'a> {
     pub surface_caps: wgpu::SurfaceCapabilities,
     pub surface_format: wgpu::TextureFormat,
     pub render_pipeline: wgpu::RenderPipeline,
-    pub camera_controller: camera_controller::CameraController,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_vertices: u32,
+    pub camera_controller: CameraController,
+    shape_geometry_buffers: ShapeGeometryBuffers,
     diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: texture::Texture,
-    camera: camera::Camera,
-    camera_uniform: camera::CameraUniform,
+    diffuse_texture: Texture,
+    camera: Camera,
+    camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
 }
@@ -76,7 +79,7 @@ impl<'a> Renderer<'a> {
             },
         );
 
-        let diffuse_texture = texture::Texture::from_bytes(
+        let diffuse_texture = Texture::from_bytes(
             &device,
             &queue,
             include_bytes!("../../resource/happy-tree.png"),
@@ -111,22 +114,16 @@ impl<'a> Renderer<'a> {
             &wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
                 entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                    }
+                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&diffuse_texture.view) },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler) }
                 ],
                 label: Some("diffuse_bind_group"),
             }
         );
 
-        let camera = camera::Camera::new(&window);
+        let camera = Camera::new(&window);
 
-        let mut camera_uniform = camera::CameraUniform::new();
+        let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
         let camera_buffer = device.create_buffer_init(
@@ -168,7 +165,7 @@ impl<'a> Renderer<'a> {
             }
         );
 
-        let camera_controller = camera_controller::CameraController::new(0.1);
+        let camera_controller = CameraController::new(0.1);
 
         let render_pipeline = Self::create_render_pipeline(
             &device,
@@ -178,22 +175,7 @@ impl<'a> Renderer<'a> {
         );
 
         let sphere = primitive_shapes::sphere::Sphere::new(16, 1.0);
-
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(&sphere.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }
-        );
-
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(&sphere.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }
-        );
+        let shape_geometry_buffers = ShapeGeometryBuffers::from(&device, &sphere.geometry);
 
         Self {
             surface,
@@ -202,9 +184,7 @@ impl<'a> Renderer<'a> {
             surface_caps,
             surface_format,
             render_pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_vertices: sphere.indices.len() as u32,
+            shape_geometry_buffers,
             diffuse_bind_group,
             diffuse_texture,
             camera,
@@ -248,12 +228,7 @@ impl<'a> Renderer<'a> {
                         view: &view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.1,
-                                g: 0.2,
-                                b: 0.3,
-                                a: 1.0,
-                            }),
+                            load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
                             store: wgpu::StoreOp::Store,
                         },
                     })],
@@ -267,10 +242,10 @@ impl<'a> Renderer<'a> {
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
 
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_vertex_buffer(0, self.shape_geometry_buffers.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.shape_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            render_pass.draw_indexed(0..self.num_vertices, 0, 0..1);
+            render_pass.draw_indexed(0..self.shape_geometry_buffers.indices_count, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

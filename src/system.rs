@@ -1,6 +1,7 @@
 pub mod application;
-pub mod renderer;
-pub mod vertex;
-pub mod texture;
-pub mod camera;
-pub mod camera_controller;
+mod renderer;
+mod texture;
+mod vertex;
+mod primitive_shapes;
+mod camera;
+mod camera_controller;

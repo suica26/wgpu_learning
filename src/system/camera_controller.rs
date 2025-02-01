@@ -2,7 +2,7 @@ use cgmath::InnerSpace;
 use winit::event::{ElementState, KeyEvent};
 use winit::keyboard;
 
-use crate::system::camera;
+use crate::system::camera::Camera;
 
 pub struct CameraController {
     pub speed: f32,
@@ -45,7 +45,7 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&self, camera: &mut camera::Camera) {
+    pub fn update_camera(&self, camera: &mut Camera) {
         use cgmath::InnerSpace;
 
         let forward = camera.target - camera.eye;
