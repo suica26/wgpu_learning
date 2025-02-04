@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::ops::Sub;
 use std::sync::Arc;
 
 use image::GenericImageView;
@@ -16,7 +17,9 @@ use crate::system::camera::{Camera, CameraUniform};
 use crate::system::camera_controller;
 use crate::system::camera_controller::CameraController;
 use crate::system::primitive_shapes::shape_geometry_buffers::ShapeGeometryBuffers;
+use crate::system::primitive_shapes::sphere::Sphere;
 use crate::system::texture::Texture;
+use crate::system::transform::TransformUniform;
 
 /// 描画を行う構造体
 pub struct Renderer<'a> {
@@ -34,6 +37,11 @@ pub struct Renderer<'a> {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    sphere: Sphere,
+    sphere_uniform: TransformUniform,
+    sphere_buffer: wgpu::Buffer,
+    sphere_bind_group: wgpu::BindGroup,
+    instant_time: std::time::Instant,
 }
 
 impl<'a> Renderer<'a> {
@@ -156,10 +164,7 @@ impl<'a> Renderer<'a> {
             &wgpu::BindGroupDescriptor {
                 layout: &camera_bind_group_layout,
                 entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: camera_buffer.as_entire_binding(),
-                    }
+                    wgpu::BindGroupEntry { binding: 0, resource: camera_buffer.as_entire_binding() }
                 ],
                 label: Some("camera_bind_group"),
             }
@@ -167,15 +172,55 @@ impl<'a> Renderer<'a> {
 
         let camera_controller = CameraController::new(0.1);
 
+        let mut sphere = Sphere::new(16, 1.0);
+        let shape_geometry_buffers = ShapeGeometryBuffers::from(&device, &sphere.geometry);
+
+        let mut sphere_uniform = TransformUniform::new();
+        sphere_uniform.update(&sphere.transform);
+
+        let sphere_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Sphere Buffer"),
+                contents: bytemuck::cast_slice(&[sphere_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let sphere_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }
+                ],
+                label: Some("sphere_bind_group_layout"),
+            }
+        );
+
+        let sphere_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &sphere_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: sphere_buffer.as_entire_binding() }
+                ],
+                label: Some("sphere_bind_group"),
+            }
+        );
+
         let render_pipeline = Self::create_render_pipeline(
             &device,
             &texture_bind_group_layout,
             &camera_bind_group_layout,
+            &sphere_bind_group_layout,
             surface_format,
         );
-
-        let sphere = primitive_shapes::sphere::Sphere::new(16, 1.0);
-        let shape_geometry_buffers = ShapeGeometryBuffers::from(&device, &sphere.geometry);
 
         Self {
             surface,
@@ -192,6 +237,11 @@ impl<'a> Renderer<'a> {
             camera_buffer,
             camera_bind_group,
             camera_controller,
+            sphere,
+            sphere_uniform,
+            sphere_buffer,
+            sphere_bind_group,
+            instant_time: std::time::Instant::now(),
         }
     }
 
@@ -241,6 +291,7 @@ impl<'a> Renderer<'a> {
 
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.sphere_bind_group, &[]);
 
             render_pass.set_vertex_buffer(0, self.shape_geometry_buffers.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.shape_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -262,10 +313,32 @@ impl<'a> Renderer<'a> {
         self.camera_controller.update_camera(&mut self.camera);
         self.camera_uniform.update_view_proj(&self.camera);
 
+        let time = self.instant_time.elapsed().as_secs_f32() * 2.0;
+
+        let dist_x = 10.0;
+        let dist_y = 2.0;
+        let dist_z = 4.0;
+
+        let freq_x = 1.0;
+        let freq_y = 0.5;
+        let freq_z = 2.8;
+
+        let position_x = dist_x * (freq_x * time).cos();
+        let position_y = dist_y * (freq_y * time).sin();
+        let position_z = dist_z * (freq_z * time).sin();
+
+        self.sphere.transform.set_position(cgmath::Point3::new(position_x, position_y, position_z));
+        self.sphere_uniform.update(&self.sphere.transform);
+
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
+        );
+        self.queue.write_buffer(
+            &self.sphere_buffer,
+            0,
+            bytemuck::cast_slice(&[self.sphere_uniform]),
         );
     }
 }
@@ -317,6 +390,7 @@ impl Renderer<'_> {
         device: &wgpu::Device,
         texture_bind_group_layout: &wgpu::BindGroupLayout,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
+        sphere_bind_group_layout: &wgpu::BindGroupLayout,
         surface_format: wgpu::TextureFormat,
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::include_wgsl!("../../shader/shader.wgsl"));
@@ -327,6 +401,7 @@ impl Renderer<'_> {
                 bind_group_layouts: &[
                     &texture_bind_group_layout,
                     &camera_bind_group_layout,
+                    &sphere_bind_group_layout
                 ],
                 push_constant_ranges: &[],
             }
@@ -374,7 +449,7 @@ impl Renderer<'_> {
         targets: &'a [Option<wgpu::ColorTargetState>])
         -> Option<wgpu::FragmentState<'a>> {
         Some(wgpu::FragmentState {
-            module: &shader,
+            module: shader,
             entry_point: Some("fs_main"),
             targets,
             compilation_options: wgpu::PipelineCompilationOptions::default(),

@@ -1,12 +1,14 @@
 use log::{debug, error};
 
 use crate::system::primitive_shapes::shape_geometry::ShapeGeometry;
+use crate::system::transform::Transform;
 use crate::system::vertex::Vertex;
 
 pub struct Sphere {
     pub div: u16,
     pub radius: f32,
     pub geometry: ShapeGeometry,
+    pub transform: Transform,
 }
 
 impl Sphere {
@@ -29,6 +31,7 @@ impl Sphere {
             div,
             radius,
             geometry,
+            transform: Transform::new(),
         }
     }
 }
