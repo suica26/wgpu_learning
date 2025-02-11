@@ -1,12 +1,11 @@
 use wgpu::util::DeviceExt;
 
-use crate::system::primitive_shapes::shape_geometry;
+use crate::system::rendering::shape_geometry;
 
 pub struct ShapeGeometryBuffers {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub indices_count: u32,
-    pub is_show: bool,
 }
 
 impl ShapeGeometryBuffers {
@@ -31,7 +30,6 @@ impl ShapeGeometryBuffers {
             vertex_buffer,
             index_buffer,
             indices_count: geometry.indices_count as u32,
-            is_show: true,
         }
     }
 }

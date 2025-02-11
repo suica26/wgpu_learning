@@ -1,4 +1,4 @@
-use crate::system::vertex::Vertex;
+use crate::system::rendering::vertex::Vertex;
 
 /// 3D形状を表す構造体
 pub struct ShapeGeometry {

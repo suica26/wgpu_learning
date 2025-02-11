@@ -6,9 +6,9 @@ struct TransformUniform {
     model_matrix: mat4x4<f32>,
 }
 
-@group(1) @binding(0)
+@group(0) @binding(0)
 var<uniform> camera: CameraUniform;
-@group(2) @binding(0)
+@group(1) @binding(0)
 var<uniform> transform: TransformUniform;
 
 struct VertexInput {
@@ -33,18 +33,4 @@ fn vs_main(
     out.clip_position = camera.view_proj * transform.model_matrix * vec4<f32>(model.position, 1.0);
     out.normal = model.normal;
     return out;
-}
-
-@group(0) @binding(0)
-var t_diffuse: texture_2d<f32>;
-@group(0) @binding(1)
-var s_diffuse: sampler;
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // return textureSample(t_diffuse, s_diffuse, in.tex_coords);
-    // return vec4<f32>(in.tex_coords, 0.0, 1.0);
-
-    return vec4<f32>(in.normal, 1.0);
-    // return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 }

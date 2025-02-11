@@ -11,15 +11,14 @@ use winit::dpi::PhysicalSize;
 use winit::event::KeyEvent;
 use winit::window::Window;
 
-use crate::system::{primitive_shapes, texture, vertex};
-use crate::system::camera;
-use crate::system::camera::{Camera, CameraUniform};
-use crate::system::camera_controller;
-use crate::system::camera_controller::CameraController;
-use crate::system::primitive_shapes::shape_geometry_buffers::ShapeGeometryBuffers;
+use crate::system::game_object::transform::TransformUniform;
+use crate::system::primitive_shapes;
 use crate::system::primitive_shapes::sphere::Sphere;
-use crate::system::texture::Texture;
-use crate::system::transform::TransformUniform;
+use crate::system::rendering::{camera, vertex};
+use crate::system::rendering::camera::{Camera, CameraUniform};
+use crate::system::rendering::camera_controller;
+use crate::system::rendering::camera_controller::CameraController;
+use crate::system::rendering::shape_geometry_buffers::ShapeGeometryBuffers;
 
 /// 描画を行う構造体
 pub struct Renderer<'a> {
@@ -31,8 +30,6 @@ pub struct Renderer<'a> {
     pub render_pipeline: wgpu::RenderPipeline,
     pub camera_controller: CameraController,
     shape_geometry_buffers: ShapeGeometryBuffers,
-    diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: Texture,
     camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -85,48 +82,6 @@ impl<'a> Renderer<'a> {
                 alpha_mode: surface_caps.alpha_modes[0],
                 desired_maximum_frame_latency: 2,
             },
-        );
-
-        let diffuse_texture = Texture::from_bytes(
-            &device,
-            &queue,
-            include_bytes!("../../resource/happy-tree.png"),
-            "happy-tree")
-            .unwrap();
-
-        let texture_bind_group_layout = device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    }
-                ],
-                label: Some("texture_bind_group_layout"),
-            }
-        );
-
-        let diffuse_bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&diffuse_texture.view) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler) }
-                ],
-                label: Some("diffuse_bind_group"),
-            }
         );
 
         let camera = Camera::new(&window);
@@ -216,7 +171,6 @@ impl<'a> Renderer<'a> {
 
         let render_pipeline = Self::create_render_pipeline(
             &device,
-            &texture_bind_group_layout,
             &camera_bind_group_layout,
             &sphere_bind_group_layout,
             surface_format,
@@ -230,8 +184,6 @@ impl<'a> Renderer<'a> {
             surface_format,
             render_pipeline,
             shape_geometry_buffers,
-            diffuse_bind_group,
-            diffuse_texture,
             camera,
             camera_uniform,
             camera_buffer,
@@ -289,9 +241,8 @@ impl<'a> Renderer<'a> {
 
             render_pass.set_pipeline(&self.render_pipeline);
 
-            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(2, &self.sphere_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.sphere_bind_group, &[]);
 
             render_pass.set_vertex_buffer(0, self.shape_geometry_buffers.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.shape_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -315,19 +266,15 @@ impl<'a> Renderer<'a> {
 
         let time = self.instant_time.elapsed().as_secs_f32() * 2.0;
 
-        let dist_x = 10.0;
-        let dist_y = 2.0;
-        let dist_z = 4.0;
-
-        let freq_x = 1.0;
-        let freq_y = 0.5;
-        let freq_z = 2.8;
-
-        let position_x = dist_x * (freq_x * time).cos();
-        let position_y = dist_y * (freq_y * time).sin();
-        let position_z = dist_z * (freq_z * time).sin();
-
-        self.sphere.transform.set_position(cgmath::Point3::new(position_x, position_y, position_z));
+        self.sphere.transform.set_position(cgmath::Point3::new(
+            10.0 * (1.0 * time).cos(),
+            2.0 * (0.5 * time).sin(),
+            4.0 * (2.8 * time).sin(),
+        )).set_rotation(cgmath::Euler::new(
+            cgmath::Rad(time * 2.0),
+            cgmath::Rad(time * 0.7),
+            cgmath::Rad(time * 1.3),
+        ));
         self.sphere_uniform.update(&self.sphere.transform);
 
         self.queue.write_buffer(
@@ -388,18 +335,17 @@ impl Renderer<'_> {
 
     fn create_render_pipeline(
         device: &wgpu::Device,
-        texture_bind_group_layout: &wgpu::BindGroupLayout,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         sphere_bind_group_layout: &wgpu::BindGroupLayout,
         surface_format: wgpu::TextureFormat,
     ) -> wgpu::RenderPipeline {
-        let shader = device.create_shader_module(wgpu::include_wgsl!("../../shader/shader.wgsl"));
+        let vs_shader = device.create_shader_module(wgpu::include_wgsl!("../../../shader/sphere_vertex.wgsl"));
+        let fs_shader = device.create_shader_module(wgpu::include_wgsl!("../../../shader/sphere_fragment.wgsl"));
 
         let render_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    &texture_bind_group_layout,
                     &camera_bind_group_layout,
                     &sphere_bind_group_layout
                 ],
@@ -411,9 +357,9 @@ impl Renderer<'_> {
             &wgpu::RenderPipelineDescriptor {
                 label: Some("Render Pipeline"),
                 layout: Some(&render_pipeline_layout),
-                vertex: Self::create_vertex_state(&shader, &[vertex::Vertex::desc()]),
+                vertex: Self::create_vertex_state(&vs_shader, &[vertex::Vertex::desc()]),
                 fragment: Self::create_fragment_state(
-                    &shader,
+                    &fs_shader,
                     &[Some(wgpu::ColorTargetState {
                         format: surface_format,
                         blend: Some(wgpu::BlendState::REPLACE),

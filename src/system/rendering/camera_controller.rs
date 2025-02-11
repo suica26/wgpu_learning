@@ -2,7 +2,7 @@ use cgmath::InnerSpace;
 use winit::event::{ElementState, KeyEvent};
 use winit::keyboard;
 
-use crate::system::camera::Camera;
+use crate::system::rendering::camera::Camera;
 
 pub struct CameraController {
     pub speed: f32,

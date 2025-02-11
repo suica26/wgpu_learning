@@ -9,7 +9,7 @@ use winit::keyboard::Key::Named;
 use winit::keyboard::NamedKey::Escape;
 use winit::window::{Window, WindowButtons, WindowId};
 
-use crate::system::renderer::Renderer;
+use crate::system::rendering::renderer::Renderer;
 
 pub struct Application<'a> {
     pub window: Option<Arc<Window>>,
