@@ -1,55 +1,58 @@
 use log::{debug, error};
 
-use crate::system::vertex::Vertex;
+use crate::system::game_object::transform::Transform;
+use crate::system::rendering::shape_geometry::ShapeGeometry;
+use crate::system::rendering::vertex::Vertex;
 
 pub struct Sphere {
-    pub div: u16,
-    pub radius: f32,
-
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u16>,
+    pub transform: Transform,
 }
 
 impl Sphere {
-    pub fn new(div: u16, radius: f32) -> Self {
-        if let Err(e) = Self::validate(div, radius) {
-            error!("{}", e);
+    pub fn new(radius: f32) -> Self {
+        if radius <= 0.0 {
+            error!("can't create sphere by radius less than or equal to 0.");
+        }
+
+        let mut transform = Transform::new();
+        transform.set_scale(cgmath::Vector3::new(radius, radius, radius));
+
+        Self { transform }
+    }
+
+    pub fn radius(&self) -> f32 {
+        self.transform.get_scale().x
+    }
+
+    pub fn set_radius(&mut self, radius: f32) {
+        if radius <= 0.0 {
+            error!("can't set radius less than or equal to 0.");
+        }
+
+        self.transform.set_scale(cgmath::Vector3::new(radius, radius, radius));
+    }
+}
+
+impl Sphere {
+    pub fn create_geometry(div: u16) -> ShapeGeometry {
+        if div <= 2 {
+            error!("can't create sphere by div less than 2.");
         }
 
         let (vertices, indices) = if div % 2 == 0 {
-            Self::create_by_divisible(div, radius)
+            Self::create_by_divisible(div)
         } else {
-            Self::create_by_indivisible(div, radius)
+            Self::create_by_indivisible(div)
         };
 
         // Self::log_create_sphere(&vertices, &indices, div);
 
-        Self {
-            div,
-            radius,
-            vertices,
-            indices,
-        }
-    }
-}
-
-impl Sphere {
-    fn validate(div: u16, radius: f32) -> Result<(), String> {
-        if div <= 2 {
-            return Err(String::from("can't create sphere by div less than 2."));
-        }
-        if radius < 0.0 {
-            return Err(String::from("can't create sphere by minus radius"));
-        }
-
-        return Ok(());
+        ShapeGeometry::from(vertices, indices)
     }
 
     /// divが奇数の場合の球体の生成
-    fn create_by_indivisible(div: u16, radius: f32) -> (Vec<Vertex>, Vec<u16>) {
+    fn create_by_indivisible(div: u16) -> (Vec<Vertex>, Vec<u16>) {
         use std::f32::consts::*;
-
-        debug!("create_by_indivisible: div: {}, radius: {}", div, radius);
 
         let mut vertices = vec![];
 
@@ -59,11 +62,9 @@ impl Sphere {
 
         let y_unit_angle = TAU / div_f32;
 
-        let top = radius;
-
         // 上側の頂点
         vertices.push(Vertex {
-            position: [0.0, top, 0.0],
+            position: [0.0, 1.0, 0.0],
             tex_coords: [0.0, 1.0],
             normal: [0.0, 1.0, 0.0],
         });
@@ -74,8 +75,8 @@ impl Sphere {
             let cos_y = (y_unit_angle * i_f32).cos();
 
             // 円周上の頂点を追加
-            let circle_radius = radius * (y_unit_angle * i_f32).sin();
-            let circle_y = radius * cos_y;
+            let circle_radius = (y_unit_angle * i_f32).sin();
+            let circle_y = cos_y;
             let circle_vertices = Self::get_circle_vertices(
                 div,
                 circle_radius,
@@ -85,7 +86,7 @@ impl Sphere {
         }
 
         // 下側の頂点
-        let bottom = radius * (y_unit_angle * half_div_f32).cos();
+        let bottom = (y_unit_angle * half_div_f32).cos();
         vertices.push(Vertex {
             position: [0.0, bottom, 0.0],
             tex_coords: [0.0, 0.0],
@@ -98,10 +99,8 @@ impl Sphere {
     }
 
     /// divが偶数の場合の球体の生成
-    fn create_by_divisible(div: u16, radius: f32) -> (Vec<Vertex>, Vec<u16>) {
+    fn create_by_divisible(div: u16) -> (Vec<Vertex>, Vec<u16>) {
         use std::f32::consts::*;
-
-        debug!("create_by_divisible: div: {}, radius: {}", div, radius);
 
         let mut vertices = vec![];
 
@@ -109,11 +108,9 @@ impl Sphere {
         let half_div_f32 = half_div as f32;
         let y_unit_angle = PI / half_div_f32;
 
-        let top = radius;
-
         // 上側の頂点
         vertices.push(Vertex {
-            position: [0.0, top, 0.0],
+            position: [0.0, 1.0, 0.0],
             tex_coords: [0.0, 1.0],
             normal: [0.0, 1.0, 0.0],
         });
@@ -124,8 +121,8 @@ impl Sphere {
             let cos_y = (y_unit_angle * i_f32).cos();
 
             // 円周上の頂点を追加
-            let circle_radius = radius * (y_unit_angle * i_f32).sin();
-            let circle_y = radius * cos_y;
+            let circle_radius = (y_unit_angle * i_f32).sin();
+            let circle_y = cos_y;
             let circle_vertices = Self::get_circle_vertices(
                 div,
                 circle_radius,
@@ -136,7 +133,7 @@ impl Sphere {
 
         // 下側の頂点
         vertices.push(Vertex {
-            position: [0.0, -top, 0.0],
+            position: [0.0, -1.0, 0.0],
             tex_coords: [0.0, 0.0],
             normal: [0.0, -1.0, 0.0],
         });
