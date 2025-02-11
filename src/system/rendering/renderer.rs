@@ -11,7 +11,7 @@ use winit::dpi::PhysicalSize;
 use winit::event::KeyEvent;
 use winit::window::Window;
 
-use crate::system::game_object::transform::TransformUniform;
+use crate::system::game_object::transform::TransformRaw;
 use crate::system::primitive_shapes;
 use crate::system::primitive_shapes::sphere::Sphere;
 use crate::system::rendering::{camera, vertex};
@@ -29,15 +29,13 @@ pub struct Renderer<'a> {
     pub surface_format: wgpu::TextureFormat,
     pub render_pipeline: wgpu::RenderPipeline,
     pub camera_controller: CameraController,
-    shape_geometry_buffers: ShapeGeometryBuffers,
+    sphere_geometry_buffers: ShapeGeometryBuffers,
     camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    sphere: Sphere,
-    sphere_uniform: TransformUniform,
-    sphere_buffer: wgpu::Buffer,
-    sphere_bind_group: wgpu::BindGroup,
+    spheres: Vec<Sphere>,
+    sphere_transform_buffer: wgpu::Buffer,
     instant_time: std::time::Instant,
 }
 
@@ -127,52 +125,34 @@ impl<'a> Renderer<'a> {
 
         let camera_controller = CameraController::new(0.1);
 
-        let mut sphere = Sphere::new(16, 1.0);
-        let shape_geometry_buffers = ShapeGeometryBuffers::from(&device, &sphere.geometry);
+        let spheres = (0..10).flat_map(|z| {
+            (0..10).map(move |x| {
+                let mut sphere = Sphere::new(1.0);
+                sphere.transform.set_position(cgmath::Point3::new(x as f32 * 2.0, 0.0, z as f32 * 2.0));
 
-        let mut sphere_uniform = TransformUniform::new();
-        sphere_uniform.update(&sphere.transform);
+                sphere
+            })
+        }).collect::<Vec<_>>();
 
-        let sphere_buffer = device.create_buffer_init(
+        let transform_data = spheres.iter()
+            .map(|x| &x.transform)
+            .map(TransformRaw::from)
+            .collect::<Vec<_>>();
+
+        let sphere_transform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
-                label: Some("Sphere Buffer"),
-                contents: bytemuck::cast_slice(&[sphere_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                label: Some("Sphere Transform Buffer"),
+                contents: bytemuck::cast_slice(&transform_data),
+                usage: wgpu::BufferUsages::VERTEX,
             }
         );
 
-        let sphere_bind_group_layout = device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }
-                ],
-                label: Some("sphere_bind_group_layout"),
-            }
-        );
-
-        let sphere_bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &sphere_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: sphere_buffer.as_entire_binding() }
-                ],
-                label: Some("sphere_bind_group"),
-            }
-        );
+        let sphere_geometry = Sphere::create_geometry(16);
+        let sphere_geometry_buffers = ShapeGeometryBuffers::from(&device, &sphere_geometry);
 
         let render_pipeline = Self::create_render_pipeline(
             &device,
             &camera_bind_group_layout,
-            &sphere_bind_group_layout,
             surface_format,
         );
 
@@ -183,16 +163,14 @@ impl<'a> Renderer<'a> {
             surface_caps,
             surface_format,
             render_pipeline,
-            shape_geometry_buffers,
+            sphere_geometry_buffers,
             camera,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
             camera_controller,
-            sphere,
-            sphere_uniform,
-            sphere_buffer,
-            sphere_bind_group,
+            spheres,
+            sphere_transform_buffer,
             instant_time: std::time::Instant::now(),
         }
     }
@@ -240,14 +218,17 @@ impl<'a> Renderer<'a> {
                 });
 
             render_pass.set_pipeline(&self.render_pipeline);
-
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.sphere_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.sphere_geometry_buffers.vertex_buffer.slice(..));
 
-            render_pass.set_vertex_buffer(0, self.shape_geometry_buffers.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.shape_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_vertex_buffer(1, self.sphere_transform_buffer.slice(..));
+            render_pass.set_index_buffer(self.sphere_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            render_pass.draw_indexed(0..self.shape_geometry_buffers.indices_count, 0, 0..1);
+            render_pass.draw_indexed(
+                0..self.sphere_geometry_buffers.indices_count,
+                0,
+                0..self.spheres.len() as _,
+            );
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -266,26 +247,31 @@ impl<'a> Renderer<'a> {
 
         let time = self.instant_time.elapsed().as_secs_f32() * 2.0;
 
-        self.sphere.transform.set_position(cgmath::Point3::new(
-            10.0 * (1.0 * time).cos(),
-            2.0 * (0.5 * time).sin(),
-            4.0 * (2.8 * time).sin(),
-        )).set_rotation(cgmath::Euler::new(
-            cgmath::Rad(time * 2.0),
-            cgmath::Rad(time * 0.7),
-            cgmath::Rad(time * 1.3),
-        ));
-        self.sphere_uniform.update(&self.sphere.transform);
+        for (index, sphere) in &mut self.spheres.iter_mut().enumerate() {
+            sphere.transform.set_rotation(cgmath::Euler::new(
+                cgmath::Rad(time * 2.0),
+                cgmath::Rad(time * 0.7),
+                cgmath::Rad(time * 1.3),
+            ));
+        }
+
+        let transform_data = self.spheres.iter()
+            .map(|x| &x.transform)
+            .map(TransformRaw::from)
+            .collect::<Vec<_>>();
+
+        self.sphere_transform_buffer = self.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Sphere Transform Buffer"),
+                contents: bytemuck::cast_slice(&transform_data),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
 
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
-        );
-        self.queue.write_buffer(
-            &self.sphere_buffer,
-            0,
-            bytemuck::cast_slice(&[self.sphere_uniform]),
         );
     }
 }
@@ -336,7 +322,6 @@ impl Renderer<'_> {
     fn create_render_pipeline(
         device: &wgpu::Device,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
-        sphere_bind_group_layout: &wgpu::BindGroupLayout,
         surface_format: wgpu::TextureFormat,
     ) -> wgpu::RenderPipeline {
         let vs_shader = device.create_shader_module(wgpu::include_wgsl!("../../../shader/sphere_vertex.wgsl"));
@@ -347,7 +332,6 @@ impl Renderer<'_> {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &camera_bind_group_layout,
-                    &sphere_bind_group_layout
                 ],
                 push_constant_ranges: &[],
             }
@@ -357,7 +341,10 @@ impl Renderer<'_> {
             &wgpu::RenderPipelineDescriptor {
                 label: Some("Render Pipeline"),
                 layout: Some(&render_pipeline_layout),
-                vertex: Self::create_vertex_state(&vs_shader, &[vertex::Vertex::desc()]),
+                vertex: Self::create_vertex_state(
+                    &vs_shader,
+                    &[vertex::Vertex::desc(), TransformRaw::desc()],
+                ),
                 fragment: Self::create_fragment_state(
                     &fs_shader,
                     &[Some(wgpu::ColorTargetState {

@@ -5,43 +5,40 @@ use crate::system::rendering::shape_geometry::ShapeGeometry;
 use crate::system::rendering::vertex::Vertex;
 
 pub struct Sphere {
-    pub div: u16,
     pub transform: Transform,
-    pub geometry: ShapeGeometry,
 }
 
 impl Sphere {
-    pub fn new(div: u16, radius: f32) -> Self {
-        if let Err(e) = Self::validate(div, radius) {
-            error!("{}", e);
+    pub fn new(radius: f32) -> Self {
+        if radius <= 0.0 {
+            error!("can't create sphere by radius less than or equal to 0.");
         }
-
-        let geometry = Self::create_geometry(div);
 
         let mut transform = Transform::new();
         transform.set_scale(cgmath::Vector3::new(radius, radius, radius));
 
-        Self {
-            div,
-            transform,
-            geometry,
+        Self { transform }
+    }
+
+    pub fn radius(&self) -> f32 {
+        self.transform.get_scale().x
+    }
+
+    pub fn set_radius(&mut self, radius: f32) {
+        if radius <= 0.0 {
+            error!("can't set radius less than or equal to 0.");
         }
+
+        self.transform.set_scale(cgmath::Vector3::new(radius, radius, radius));
     }
 }
 
 impl Sphere {
-    fn validate(div: u16, radius: f32) -> Result<(), String> {
+    pub fn create_geometry(div: u16) -> ShapeGeometry {
         if div <= 2 {
-            return Err(String::from("can't create sphere by div less than 2."));
-        }
-        if radius < 0.0 {
-            return Err(String::from("can't create sphere by minus radius"));
+            error!("can't create sphere by div less than 2.");
         }
 
-        return Ok(());
-    }
-
-    fn create_geometry(div: u16) -> ShapeGeometry {
         let (vertices, indices) = if div % 2 == 0 {
             Self::create_by_divisible(div)
         } else {

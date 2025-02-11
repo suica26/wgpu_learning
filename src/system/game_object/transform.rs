@@ -1,3 +1,5 @@
+use std::mem;
+
 use cgmath::{EuclideanSpace, Euler, Matrix4, Point3, Quaternion, Rad, SquareMatrix, Vector3};
 use winit::dpi::Position;
 
@@ -55,16 +57,45 @@ impl Transform {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct TransformUniform {
-    pub model_matrix: [[f32; 4]; 4],
+pub struct TransformRaw {
+    pub model: [[f32; 4]; 4],
 }
 
-impl TransformUniform {
-    pub fn new() -> Self {
-        Self { model_matrix: Matrix4::identity().into() }
+impl TransformRaw {
+    pub fn from(transform: &Transform) -> Self {
+        Self { model: transform.get_matrix().into() }
     }
 
     pub fn update(&mut self, transform: &Transform) {
-        self.model_matrix = transform.get_matrix().into();
+        self.model = transform.get_matrix().into();
+    }
+
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<TransformRaw>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    format: wgpu::VertexFormat::Float32x4,
+                    shader_location: 5,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    format: wgpu::VertexFormat::Float32x4,
+                    shader_location: 6,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    format: wgpu::VertexFormat::Float32x4,
+                    shader_location: 7,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 12]>() as wgpu::BufferAddress,
+                    format: wgpu::VertexFormat::Float32x4,
+                    shader_location: 8,
+                },
+            ],
+        }
     }
 }
