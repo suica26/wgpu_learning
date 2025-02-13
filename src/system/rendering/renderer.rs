@@ -5,16 +5,17 @@ use std::sync::Arc;
 use image::GenericImageView;
 use log::{debug, error, info};
 use pollster::block_on;
+use wgpu::{PrimitiveState, WasmNotSend};
 use wgpu::util::{DeviceExt, RenderEncoder};
-use wgpu::WasmNotSend;
 use winit::dpi::PhysicalSize;
 use winit::event::KeyEvent;
 use winit::window::Window;
 
 use crate::system::game_object::transform::TransformRaw;
 use crate::system::primitive_shapes;
+use crate::system::primitive_shapes::plane::Plane;
 use crate::system::primitive_shapes::sphere::Sphere;
-use crate::system::rendering::{camera, vertex};
+use crate::system::rendering::{camera, texture, vertex};
 use crate::system::rendering::camera::{Camera, CameraUniform};
 use crate::system::rendering::camera_controller;
 use crate::system::rendering::camera_controller::CameraController;
@@ -27,15 +28,23 @@ pub struct Renderer<'a> {
     pub queue: wgpu::Queue,
     pub surface_caps: wgpu::SurfaceCapabilities,
     pub surface_format: wgpu::TextureFormat,
+    pub surface_config: wgpu::SurfaceConfiguration,
     pub render_pipeline: wgpu::RenderPipeline,
     pub camera_controller: CameraController,
-    sphere_geometry_buffers: ShapeGeometryBuffers,
     camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     spheres: Vec<Sphere>,
     sphere_transform_buffer: wgpu::Buffer,
+    sphere_geometry_buffers: ShapeGeometryBuffers,
+    plane: Plane,
+    plane_transform_buffer: wgpu::Buffer,
+    plane_geometry_buffers: ShapeGeometryBuffers,
+    depth_texture: texture::Texture,
+    depth_bind_group_layout: wgpu::BindGroupLayout,
+    depth_bind_group: wgpu::BindGroup,
+    depth_render_pipeline: wgpu::RenderPipeline,
     instant_time: std::time::Instant,
 }
 
@@ -68,19 +77,18 @@ impl<'a> Renderer<'a> {
             .next()
             .unwrap_or(surface_caps.formats[0]);
 
-        surface.configure(
-            &device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: surface_format,
-                width: window.inner_size().width,
-                height: window.inner_size().height,
-                present_mode: wgpu::PresentMode::Immediate,
-                view_formats: Vec::new(),
-                alpha_mode: surface_caps.alpha_modes[0],
-                desired_maximum_frame_latency: 2,
-            },
-        );
+        let surface_config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            width: window.inner_size().width,
+            height: window.inner_size().height,
+            present_mode: wgpu::PresentMode::Immediate,
+            view_formats: Vec::new(),
+            alpha_mode: surface_caps.alpha_modes[0],
+            desired_maximum_frame_latency: 2,
+        };
+
+        surface.configure(&device, &surface_config);
 
         let camera = Camera::new(&window);
 
@@ -150,10 +158,122 @@ impl<'a> Renderer<'a> {
         let sphere_geometry = Sphere::create_geometry(16);
         let sphere_geometry_buffers = ShapeGeometryBuffers::from(&device, &sphere_geometry);
 
+        let mut plane = Plane::new();
+        plane.transform.set_position(cgmath::Point3::new(0.0, 8.0, 10.0))
+            .set_rotation(cgmath::Euler::new(
+                cgmath::Rad(0.0),
+                cgmath::Rad(std::f32::consts::PI),
+                cgmath::Rad(0.0),
+            ))
+            .set_scale(cgmath::Vector3::new(5.0, 5.0, 5.0));
+
+        let transform_data = vec![TransformRaw::from(&plane.transform)];
+        let plane_transform_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Plane Transform Buffer"),
+                contents: bytemuck::cast_slice(&transform_data),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+
+        let plane_geometry = Plane::create_geometry();
+        let plane_geometry_buffers = ShapeGeometryBuffers::from(&device, &plane_geometry);
+
+        let depth_texture = texture::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
+
+        let depth_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("depth_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        count: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        count: None,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                    }
+                ],
+            }
+        );
+
+        let depth_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                label: Some("depth_bind_group"),
+                layout: &depth_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&depth_texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&depth_texture.sampler),
+                    }
+                ],
+            }
+        );
+
+        let vs_module = device.create_shader_module(wgpu::include_wgsl!("../../../shader/sphere_vertex.wgsl"));
+        let fs_module = device.create_shader_module(wgpu::include_wgsl!("../../../shader/sphere_fragment.wgsl"));
         let render_pipeline = Self::create_render_pipeline(
+            "render_pipeline_layout",
+            "render_pipeline",
             &device,
-            &camera_bind_group_layout,
-            surface_format,
+            &[&camera_bind_group_layout],
+            Self::create_vertex_state(
+                &vs_module,
+                &[vertex::Vertex::desc(), TransformRaw::desc()],
+            ),
+            Self::create_fragment_state(
+                &fs_module,
+                &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            ),
+            Self::create_primitive_state(),
+            Self::create_depth_stencil_state(),
+        );
+
+        let depth_vs_module = device.create_shader_module(wgpu::include_wgsl!("../../../shader/depth_vertex.wgsl"));
+        let depth_fs_module = device.create_shader_module(wgpu::include_wgsl!("../../../shader/depth_fragment.wgsl"));
+        let depth_render_pipeline = Self::create_render_pipeline(
+            "depth_render_pipeline_layout",
+            "depth_render_pipeline",
+            &device,
+            &[
+                &camera_bind_group_layout,
+                &depth_bind_group_layout,
+            ],
+            Self::create_vertex_state(
+                &depth_vs_module,
+                &[vertex::Vertex::desc(), TransformRaw::desc()],
+            ),
+            Self::create_fragment_state(
+                &depth_fs_module,
+                &[
+                    Some(wgpu::ColorTargetState {
+                        format: surface_format,
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent::REPLACE,
+                            alpha: wgpu::BlendComponent::REPLACE,
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })
+                ],
+            ),
+            Self::create_primitive_state(),
+            None,
         );
 
         Self {
@@ -162,8 +282,8 @@ impl<'a> Renderer<'a> {
             queue,
             surface_caps,
             surface_format,
+            surface_config,
             render_pipeline,
-            sphere_geometry_buffers,
             camera,
             camera_uniform,
             camera_buffer,
@@ -171,6 +291,14 @@ impl<'a> Renderer<'a> {
             camera_controller,
             spheres,
             sphere_transform_buffer,
+            sphere_geometry_buffers,
+            plane,
+            plane_transform_buffer,
+            plane_geometry_buffers,
+            depth_texture,
+            depth_bind_group_layout,
+            depth_bind_group,
+            depth_render_pipeline,
             instant_time: std::time::Instant::now(),
         }
     }
@@ -189,17 +317,40 @@ impl<'a> Renderer<'a> {
                 desired_maximum_frame_latency: 2,
             },
         );
+
+        self.depth_texture = texture::Texture::create_depth_texture(
+            &self.device,
+            &self.surface_config,
+            "depth_texture",
+        );
+        self.depth_bind_group = self.device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                label: Some("depth_bind_group"),
+                layout: &self.depth_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&self.depth_texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.depth_texture.sampler),
+                    }
+                ],
+            }
+        );
+
+        self.camera.aspect = self.surface_config.width as f32 / self.surface_config.height as f32;
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-
         let mut encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") }
         );
 
+        // main render pass
         {
             let mut render_pass = encoder.begin_render_pass(
                 &wgpu::RenderPassDescriptor {
@@ -212,7 +363,14 @@ impl<'a> Renderer<'a> {
                             store: wgpu::StoreOp::Store,
                         },
                     })],
-                    depth_stencil_attachment: None,
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_texture.view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
                     occlusion_query_set: None,
                     timestamp_writes: None,
                 });
@@ -220,14 +378,42 @@ impl<'a> Renderer<'a> {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.sphere_geometry_buffers.vertex_buffer.slice(..));
-
             render_pass.set_vertex_buffer(1, self.sphere_transform_buffer.slice(..));
             render_pass.set_index_buffer(self.sphere_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-
             render_pass.draw_indexed(
                 0..self.sphere_geometry_buffers.indices_count,
                 0,
                 0..self.spheres.len() as _,
+            );
+        }
+
+        // depth texture render pass
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Depth Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            render_pass.set_pipeline(&self.depth_render_pipeline);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.depth_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.plane_geometry_buffers.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.plane_transform_buffer.slice(..));
+            render_pass.set_index_buffer(self.plane_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(
+                0..self.plane_geometry_buffers.indices_count,
+                0,
+                0..1,
             );
         }
 
@@ -276,7 +462,7 @@ impl<'a> Renderer<'a> {
     }
 }
 
-/// private implementation
+/// private impl
 impl Renderer<'_> {
     fn create_adapter(instance: &wgpu::Instance, surface: &wgpu::Surface) -> wgpu::Adapter {
         let request = instance.request_adapter(
@@ -320,40 +506,31 @@ impl Renderer<'_> {
     }
 
     fn create_render_pipeline(
+        layout_label: &str,
+        label: &str,
         device: &wgpu::Device,
-        camera_bind_group_layout: &wgpu::BindGroupLayout,
-        surface_format: wgpu::TextureFormat,
+        bind_group_layouts: &[&wgpu::BindGroupLayout],
+        vertex_state: wgpu::VertexState,
+        fragment_state: Option<wgpu::FragmentState>,
+        primitive_state: PrimitiveState,
+        depth_stencil_state: Option<wgpu::DepthStencilState>,
     ) -> wgpu::RenderPipeline {
-        let vs_shader = device.create_shader_module(wgpu::include_wgsl!("../../../shader/sphere_vertex.wgsl"));
-        let fs_shader = device.create_shader_module(wgpu::include_wgsl!("../../../shader/sphere_fragment.wgsl"));
-
         let render_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[
-                    &camera_bind_group_layout,
-                ],
+                label: Some(layout_label),
+                bind_group_layouts,
                 push_constant_ranges: &[],
             }
         );
 
         device.create_render_pipeline(
             &wgpu::RenderPipelineDescriptor {
-                label: Some("Render Pipeline"),
+                label: Some(label),
                 layout: Some(&render_pipeline_layout),
-                vertex: Self::create_vertex_state(
-                    &vs_shader,
-                    &[vertex::Vertex::desc(), TransformRaw::desc()],
-                ),
-                fragment: Self::create_fragment_state(
-                    &fs_shader,
-                    &[Some(wgpu::ColorTargetState {
-                        format: surface_format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })]),
-                primitive: Self::create_primitive_state(),
-                depth_stencil: None,
+                vertex: vertex_state,
+                fragment: fragment_state,
+                primitive: primitive_state,
+                depth_stencil: depth_stencil_state,
                 multisample: wgpu::MultisampleState {
                     count: 1,
                     mask: !0,
@@ -370,10 +547,10 @@ impl Renderer<'_> {
         buffers: &'a [wgpu::VertexBufferLayout])
         -> wgpu::VertexState<'a> {
         wgpu::VertexState {
-            module: shader,
+            module: &shader,
             entry_point: Some("vs_main"),
             buffers,
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            compilation_options: Default::default(),
         }
     }
 
@@ -382,10 +559,10 @@ impl Renderer<'_> {
         targets: &'a [Option<wgpu::ColorTargetState>])
         -> Option<wgpu::FragmentState<'a>> {
         Some(wgpu::FragmentState {
-            module: shader,
+            module: &shader,
             entry_point: Some("fs_main"),
             targets,
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            compilation_options: Default::default(),
         })
     }
 
@@ -399,5 +576,15 @@ impl Renderer<'_> {
             unclipped_depth: false,
             conservative: false,
         };
+    }
+
+    fn create_depth_stencil_state() -> Option<wgpu::DepthStencilState> {
+        Some(wgpu::DepthStencilState {
+            format: texture::Texture::DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        })
     }
 }
