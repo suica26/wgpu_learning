@@ -159,13 +159,13 @@ impl<'a> Renderer<'a> {
         let sphere_geometry_buffers = ShapeGeometryBuffers::from(&device, &sphere_geometry);
 
         let mut plane = Plane::new();
-        plane.transform.set_position(cgmath::Point3::new(0.0, 8.0, 10.0))
+        plane.transform.set_position(cgmath::Point3::new(0.0, 30.0, 10.0))
             .set_rotation(cgmath::Euler::new(
                 cgmath::Rad(0.0),
-                cgmath::Rad(std::f32::consts::PI),
+                cgmath::Rad(0.0),
                 cgmath::Rad(0.0),
             ))
-            .set_scale(cgmath::Vector3::new(5.0, 5.0, 5.0));
+            .set_scale(cgmath::Vector3::new(50.0, 50.0, 50.0));
 
         let transform_data = vec![TransformRaw::from(&plane.transform)];
         let plane_transform_buffer = device.create_buffer_init(
@@ -434,11 +434,17 @@ impl<'a> Renderer<'a> {
         let time = self.instant_time.elapsed().as_secs_f32() * 2.0;
 
         for (index, sphere) in &mut self.spheres.iter_mut().enumerate() {
-            sphere.transform.set_rotation(cgmath::Euler::new(
-                cgmath::Rad(time * 2.0),
-                cgmath::Rad(time * 0.7),
-                cgmath::Rad(time * 1.3),
-            ));
+            sphere.transform
+                .set_position(cgmath::Point3::new(
+                    (index % 10) as f32 * 3.0 - 13.5,
+                    (time * 2.0 + index as f32).sin() * 10.0,
+                    (index / 10) as f32 * 3.0 - 13.5,
+                ))
+                .set_rotation(cgmath::Euler::new(
+                    cgmath::Rad(time * 2.0),
+                    cgmath::Rad(time * 0.7),
+                    cgmath::Rad(time * 1.3),
+                ));
         }
 
         let transform_data = self.spheres.iter()
