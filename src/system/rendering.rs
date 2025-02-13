@@ -6,3 +6,4 @@ mod shape_geometry_cache;
 mod camera;
 mod camera_controller;
 pub mod vertex;
+mod texture;
