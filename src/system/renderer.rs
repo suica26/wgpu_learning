@@ -6,20 +6,20 @@ use image::GenericImageView;
 use log::{debug, error, info};
 use pollster::block_on;
 use wgpu::{PrimitiveState, WasmNotSend};
+use wgpu::core::device;
 use wgpu::util::{DeviceExt, RenderEncoder};
 use winit::dpi::PhysicalSize;
 use winit::event::KeyEvent;
 use winit::window::Window;
 
-use crate::system::game_object::transform::TransformRaw;
-use crate::system::primitive_shapes;
-use crate::system::primitive_shapes::plane::Plane;
-use crate::system::primitive_shapes::sphere::Sphere;
-use crate::system::rendering::{camera, texture, vertex};
-use crate::system::rendering::camera::{Camera, CameraUniform};
-use crate::system::rendering::camera_controller;
-use crate::system::rendering::camera_controller::CameraController;
-use crate::system::rendering::shape_geometry_buffers::ShapeGeometryBuffers;
+use crate::system::{camera, texture, vertex};
+use crate::system::camera::{Camera, CameraUniform};
+use crate::system::camera_controller;
+use crate::system::camera_controller::CameraController;
+use crate::system::shape_geometry::{ShapeGeometryBuffers, ShapeGeometryFactory};
+use crate::system::shapes::{Plane, ShapeType};
+use crate::system::shapes::Sphere;
+use crate::system::transform::TransformRaw;
 
 /// 描画を行う構造体
 pub struct Renderer<'a> {
@@ -37,16 +37,17 @@ pub struct Renderer<'a> {
     camera_bind_group: wgpu::BindGroup,
     spheres: Vec<Sphere>,
     sphere_transform_buffer: wgpu::Buffer,
-    sphere_geometry_buffers: ShapeGeometryBuffers,
     plane: Plane,
     plane_transform_buffer: wgpu::Buffer,
-    plane_geometry_buffers: ShapeGeometryBuffers,
+    shape_factory: ShapeGeometryFactory,
     depth_texture: texture::Texture,
     depth_bind_group_layout: wgpu::BindGroupLayout,
     depth_bind_group: wgpu::BindGroup,
     depth_render_pipeline: wgpu::RenderPipeline,
     instant_time: std::time::Instant,
 }
+
+pub const SPHERE: ShapeType = ShapeType::Sphere(16);
 
 impl<'a> Renderer<'a> {
     pub fn new(window: Arc<Window>) -> Self {
@@ -69,8 +70,7 @@ impl<'a> Renderer<'a> {
         let (device, queue) = Self::create_device_and_queue(&adapter);
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps
-            .formats
+        let surface_format = surface_caps.formats
             .iter()
             .copied()
             .filter(|f| f.is_srgb())
@@ -91,6 +91,7 @@ impl<'a> Renderer<'a> {
         surface.configure(&device, &surface_config);
 
         let camera = Camera::new(&window);
+        let camera_controller = CameraController::new(0.1);
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
@@ -125,18 +126,26 @@ impl<'a> Renderer<'a> {
             &wgpu::BindGroupDescriptor {
                 layout: &camera_bind_group_layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: camera_buffer.as_entire_binding() }
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: camera_buffer.as_entire_binding(),
+                    }
                 ],
                 label: Some("camera_bind_group"),
             }
         );
 
-        let camera_controller = CameraController::new(0.1);
+        let mut shape_factory = ShapeGeometryFactory::new();
 
         let spheres = (0..10).flat_map(|z| {
             (0..10).map(move |x| {
                 let mut sphere = Sphere::new(1.0);
-                sphere.transform.set_position(cgmath::Point3::new(x as f32 * 2.0, 0.0, z as f32 * 2.0));
+                sphere.transform
+                    .set_position(cgmath::Point3::new(
+                        x as f32 * 2.0,
+                        0.0,
+                        z as f32 * 2.0,
+                    ));
 
                 sphere
             })
@@ -155,17 +164,25 @@ impl<'a> Renderer<'a> {
             }
         );
 
-        let sphere_geometry = Sphere::create_geometry(16);
-        let sphere_geometry_buffers = ShapeGeometryBuffers::from(&device, &sphere_geometry);
+        shape_factory.create_geometry(&device, SPHERE);
 
         let mut plane = Plane::new();
-        plane.transform.set_position(cgmath::Point3::new(0.0, 30.0, 10.0))
+        plane.transform
+            .set_position(cgmath::Point3::new(
+                0.0,
+                30.0,
+                10.0,
+            ))
             .set_rotation(cgmath::Euler::new(
                 cgmath::Rad(0.0),
                 cgmath::Rad(0.0),
                 cgmath::Rad(0.0),
             ))
-            .set_scale(cgmath::Vector3::new(50.0, 50.0, 50.0));
+            .set_scale(cgmath::Vector3::new(
+                50.0,
+                50.0,
+                50.0,
+            ));
 
         let transform_data = vec![TransformRaw::from(&plane.transform)];
         let plane_transform_buffer = device.create_buffer_init(
@@ -176,11 +193,9 @@ impl<'a> Renderer<'a> {
             }
         );
 
-        let plane_geometry = Plane::create_geometry();
-        let plane_geometry_buffers = ShapeGeometryBuffers::from(&device, &plane_geometry);
+        shape_factory.create_geometry(&device, ShapeType::Square);
 
         let depth_texture = texture::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
-
         let depth_bind_group_layout = device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 label: Some("depth_bind_group_layout"),
@@ -222,19 +237,17 @@ impl<'a> Renderer<'a> {
             }
         );
 
-        let vs_module = device.create_shader_module(wgpu::include_wgsl!("../../../shader/sphere_vertex.wgsl"));
-        let fs_module = device.create_shader_module(wgpu::include_wgsl!("../../../shader/sphere_fragment.wgsl"));
         let render_pipeline = Self::create_render_pipeline(
             "render_pipeline_layout",
             "render_pipeline",
             &device,
             &[&camera_bind_group_layout],
             Self::create_vertex_state(
-                &vs_module,
+                &device.create_shader_module(wgpu::include_wgsl!("../../shader/sphere_vertex.wgsl")),
                 &[vertex::Vertex::desc(), TransformRaw::desc()],
             ),
             Self::create_fragment_state(
-                &fs_module,
+                &device.create_shader_module(wgpu::include_wgsl!("../../shader/sphere_fragment.wgsl")),
                 &[Some(wgpu::ColorTargetState {
                     format: surface_format,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -245,8 +258,6 @@ impl<'a> Renderer<'a> {
             Self::create_depth_stencil_state(),
         );
 
-        let depth_vs_module = device.create_shader_module(wgpu::include_wgsl!("../../../shader/depth_vertex.wgsl"));
-        let depth_fs_module = device.create_shader_module(wgpu::include_wgsl!("../../../shader/depth_fragment.wgsl"));
         let depth_render_pipeline = Self::create_render_pipeline(
             "depth_render_pipeline_layout",
             "depth_render_pipeline",
@@ -256,11 +267,11 @@ impl<'a> Renderer<'a> {
                 &depth_bind_group_layout,
             ],
             Self::create_vertex_state(
-                &depth_vs_module,
+                &device.create_shader_module(wgpu::include_wgsl!("../../shader/depth_vertex.wgsl")),
                 &[vertex::Vertex::desc(), TransformRaw::desc()],
             ),
             Self::create_fragment_state(
-                &depth_fs_module,
+                &device.create_shader_module(wgpu::include_wgsl!("../../shader/depth_fragment.wgsl")),
                 &[
                     Some(wgpu::ColorTargetState {
                         format: surface_format,
@@ -289,12 +300,11 @@ impl<'a> Renderer<'a> {
             camera_buffer,
             camera_bind_group,
             camera_controller,
+            shape_factory,
             spheres,
             sphere_transform_buffer,
-            sphere_geometry_buffers,
             plane,
             plane_transform_buffer,
-            plane_geometry_buffers,
             depth_texture,
             depth_bind_group_layout,
             depth_bind_group,
@@ -377,11 +387,13 @@ impl<'a> Renderer<'a> {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.sphere_geometry_buffers.vertex_buffer.slice(..));
+            let sphere_geometry_buffers = self.shape_factory.get_geometry(&SPHERE).unwrap();
+
+            render_pass.set_vertex_buffer(0, sphere_geometry_buffers.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.sphere_transform_buffer.slice(..));
-            render_pass.set_index_buffer(self.sphere_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_index_buffer(sphere_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(
-                0..self.sphere_geometry_buffers.indices_count,
+                0..sphere_geometry_buffers.indices_count,
                 0,
                 0..self.spheres.len() as _,
             );
@@ -407,11 +419,14 @@ impl<'a> Renderer<'a> {
             render_pass.set_pipeline(&self.depth_render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.depth_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.plane_geometry_buffers.vertex_buffer.slice(..));
+
+            let plane_geometry_buffers = self.shape_factory.get_geometry(&ShapeType::Square).unwrap();
+
+            render_pass.set_vertex_buffer(0, plane_geometry_buffers.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.plane_transform_buffer.slice(..));
-            render_pass.set_index_buffer(self.plane_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_index_buffer(plane_geometry_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(
-                0..self.plane_geometry_buffers.indices_count,
+                0..plane_geometry_buffers.indices_count,
                 0,
                 0..1,
             );

@@ -1,4 +1,10 @@
 pub mod application;
-mod primitive_shapes;
-mod game_object;
-mod rendering;
+pub mod transform;
+pub mod renderer;
+pub mod shape_geometry;
+pub mod vertex;
+mod shapes;
+mod camera;
+mod camera_controller;
+mod texture;
+mod model;

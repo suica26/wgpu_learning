@@ -3,7 +3,7 @@ use std::mem;
 use cgmath::{EuclideanSpace, Euler, Matrix4, Point3, Quaternion, Rad, SquareMatrix, Vector3};
 use winit::dpi::Position;
 
-/// Transform component
+/// Transform情報を保持する構造体
 pub struct Transform {
     position: Point3<f32>,
     angle: Euler<Rad<f32>>,
@@ -55,6 +55,7 @@ impl Transform {
     }
 }
 
+/// Transform情報をGPUに渡すための構造体
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct TransformRaw {

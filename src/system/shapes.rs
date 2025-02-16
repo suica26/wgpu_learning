@@ -1,9 +1,69 @@
 use log::{debug, error};
 
-use crate::system::game_object::transform::Transform;
-use crate::system::rendering::shape_geometry::ShapeGeometry;
-use crate::system::rendering::vertex::Vertex;
+use crate::system::shape_geometry::ShapeGeometry;
+use crate::system::transform::Transform;
+use crate::system::vertex::Vertex;
 
+/// プリミティブ形状の種類
+#[derive(Debug, Eq, PartialEq, Hash)]
+pub enum ShapeType {
+    /// 立方体
+    Cube,
+    /// 球 (分割数)
+    Sphere(u16),
+    /// 円柱 (分割数)
+    Cylinder(u16),
+    /// 円錐 (分割数)
+    Cone(u16),
+    /// トーラス (分割数)
+    Torus(u16),
+    /// 正方形
+    Square,
+    /// その他(ラベル)
+    Other(String),
+}
+
+/// 正方形
+pub struct Plane {
+    pub transform: Transform,
+}
+
+impl Plane {
+    pub fn new() -> Self {
+        Self { transform: Transform::new() }
+    }
+
+    pub fn create_geometry() -> ShapeGeometry {
+        let vertices = vec![
+            Vertex {
+                position: [-0.5, 0.5, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                tex_coords: [0.0, 1.0],
+            },
+            Vertex {
+                position: [0.5, 0.5, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                tex_coords: [1.0, 1.0],
+            },
+            Vertex {
+                position: [0.5, -0.5, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                tex_coords: [1.0, 0.0],
+            },
+            Vertex {
+                position: [-0.5, -0.5, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                tex_coords: [0.0, 0.0],
+            },
+        ];
+
+        let indices = vec![0, 1, 2, 0, 2, 3];
+
+        ShapeGeometry::from(vertices.to_vec(), indices.to_vec())
+    }
+}
+
+/// 球
 pub struct Sphere {
     pub transform: Transform,
 }
@@ -44,8 +104,6 @@ impl Sphere {
         } else {
             Self::create_by_indivisible(div)
         };
-
-        // Self::log_create_sphere(&vertices, &indices, div);
 
         ShapeGeometry::from(vertices, indices)
     }
@@ -216,50 +274,5 @@ impl Sphere {
         }
 
         indices
-    }
-
-    fn log_create_sphere(vertices: &Vec<Vertex>, indices: &Vec<u16>, div: u16) {
-        let mut output_str = String::new();
-
-        for (i, v) in vertices.iter().enumerate() {
-            if i > 0 {
-                if (i as u16 - 1) % div == 0 {
-                    output_str.push_str("\n");
-                }
-            }
-
-            output_str.push_str(&format!("{:?} {:?}\n", i, v.position));
-        }
-
-        output_str.push_str("\n");
-
-        for i in 0..indices.len() / 3 {
-            if i as u16 % div == 0 {
-                output_str.push_str("\n");
-            }
-
-            let idx = i * 3;
-            output_str.push_str(&format!("{:?} {:?} {:?}\n", indices[idx], indices[idx + 1], indices[idx + 2]));
-        }
-
-        {
-            use std::io::prelude::*;
-            use std::io::BufWriter;
-            use std::fs::File;
-            use std::path::Path;
-
-            let path = Path::new("vertices_indices.txt");
-            let mut file = match File::create(&path) {
-                Ok(f) => f,
-                Err(e) => panic!("File Create Error: {:?}", e),
-            };
-
-            debug!("File created: {:?}", file.metadata());
-
-            match file.write(output_str.as_bytes()) {
-                Ok(_) => debug!("Write success"),
-                Err(e) => panic!("File Write Error: {:?}", e),
-            };
-        }
     }
 }
