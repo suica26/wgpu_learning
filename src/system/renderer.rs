@@ -139,13 +139,10 @@ impl<'a> Renderer<'a> {
 
         let spheres = (0..10).flat_map(|z| {
             (0..10).map(move |x| {
-                let mut sphere = Sphere::new(1.0);
+                let mut sphere = Sphere::new();
                 sphere.transform
-                    .set_position(cgmath::Point3::new(
-                        x as f32 * 2.0,
-                        0.0,
-                        z as f32 * 2.0,
-                    ));
+                    .set_position_x(x as f32 * 2.0)
+                    .set_position_z(z as f32 * 2.0);
 
                 sphere
             })
@@ -168,21 +165,9 @@ impl<'a> Renderer<'a> {
 
         let mut plane = Square::new();
         plane.transform
-            .set_position(cgmath::Point3::new(
-                0.0,
-                30.0,
-                10.0,
-            ))
-            .set_rotation(cgmath::Euler::new(
-                cgmath::Rad(0.0),
-                cgmath::Rad(0.0),
-                cgmath::Rad(0.0),
-            ))
-            .set_scale(cgmath::Vector3::new(
-                50.0,
-                50.0,
-                50.0,
-            ));
+            .set_position_y(30.0)
+            .set_position_z(10.0)
+            .set_scale(50.0);
 
         let transform_data = vec![TransformRaw::from(&plane.transform)];
         let plane_transform_buffer = device.create_buffer_init(
@@ -446,19 +431,19 @@ impl<'a> Renderer<'a> {
         self.camera_controller.update_camera(&mut self.camera);
         self.camera_uniform.update_view_proj(&self.camera);
 
-        let time = self.instant_time.elapsed().as_secs_f32() * 2.0;
+        let time = self.instant_time.elapsed().as_secs_f32();
 
         for (index, sphere) in &mut self.spheres.iter_mut().enumerate() {
             sphere.transform
                 .set_position(cgmath::Point3::new(
                     (index % 10) as f32 * 3.0 - 13.5,
-                    (time * 2.0 + index as f32).sin() * 10.0,
+                    (time * 4.0 + index as f32).sin() * 10.0,
                     (index / 10) as f32 * 3.0 - 13.5,
                 ))
                 .set_rotation(cgmath::Euler::new(
-                    cgmath::Rad(time * 2.0),
-                    cgmath::Rad(time * 0.7),
-                    cgmath::Rad(time * 1.3),
+                    cgmath::Rad(time * 4.0),
+                    cgmath::Rad(time * 1.4),
+                    cgmath::Rad(time * 2.6),
                 ));
         }
 

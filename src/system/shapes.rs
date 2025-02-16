@@ -1,8 +1,6 @@
-use log::{debug, error};
+use cgmath::{Quaternion, Vector3};
 
-use crate::system::shape_geometry::ShapeGeometry;
 use crate::system::transform::Transform;
-use crate::system::vertex::Vertex;
 
 /// プリミティブ形状の種類
 #[derive(Debug, Eq, PartialEq, Hash)]
@@ -32,6 +30,10 @@ impl Square {
     pub fn new() -> Self {
         Self { transform: Transform::new() }
     }
+
+    pub fn get_normal(&self) -> Vector3<f32> {
+        Quaternion::from(self.transform.get_rotation()) * Vector3::unit_z()
+    }
 }
 
 /// 球
@@ -40,15 +42,8 @@ pub struct Sphere {
 }
 
 impl Sphere {
-    pub fn new(radius: f32) -> Self {
-        if radius <= 0.0 {
-            error!("can't create sphere by radius less than or equal to 0.");
-        }
-
-        let mut transform = Transform::new();
-        transform.set_scale(cgmath::Vector3::new(radius, radius, radius));
-
-        Self { transform }
+    pub fn new() -> Self {
+        Self { transform: Transform::new() }
     }
 
     pub fn radius(&self) -> f32 {
@@ -56,10 +51,6 @@ impl Sphere {
     }
 
     pub fn set_radius(&mut self, radius: f32) {
-        if radius <= 0.0 {
-            error!("can't set radius less than or equal to 0.");
-        }
-
-        self.transform.set_scale(cgmath::Vector3::new(radius, radius, radius));
+        self.transform.set_scale_by_vector(Vector3::new(radius, radius, radius));
     }
 }
