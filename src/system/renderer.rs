@@ -17,7 +17,7 @@ use crate::system::camera::{Camera, CameraUniform};
 use crate::system::camera_controller;
 use crate::system::camera_controller::CameraController;
 use crate::system::shape_geometry::{ShapeGeometryBuffers, ShapeGeometryFactory};
-use crate::system::shapes::{Plane, ShapeType};
+use crate::system::shapes::{ShapeType, Square};
 use crate::system::shapes::Sphere;
 use crate::system::transform::TransformRaw;
 
@@ -37,7 +37,7 @@ pub struct Renderer<'a> {
     camera_bind_group: wgpu::BindGroup,
     spheres: Vec<Sphere>,
     sphere_transform_buffer: wgpu::Buffer,
-    plane: Plane,
+    plane: Square,
     plane_transform_buffer: wgpu::Buffer,
     shape_factory: ShapeGeometryFactory,
     depth_texture: texture::Texture,
@@ -166,7 +166,7 @@ impl<'a> Renderer<'a> {
 
         shape_factory.create_geometry(&device, SPHERE);
 
-        let mut plane = Plane::new();
+        let mut plane = Square::new();
         plane.transform
             .set_position(cgmath::Point3::new(
                 0.0,

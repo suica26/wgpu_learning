@@ -2,9 +2,11 @@ use std::collections::HashMap;
 
 use wgpu::util::DeviceExt;
 
-use crate::system::shapes;
 use crate::system::shapes::ShapeType;
 use crate::system::vertex::Vertex;
+
+mod sphere;
+mod square;
 
 /// 3D形状を表す構造体
 pub struct ShapeGeometry {
@@ -65,8 +67,8 @@ impl ShapeGeometryFactory {
         self.geometries.entry(shape_type)
             .or_insert_with_key(|st| {
                 let geometry = match st {
-                    ShapeType::Sphere(div) => shapes::Sphere::create_geometry(*div),
-                    ShapeType::Square => shapes::Plane::create_geometry(),
+                    ShapeType::Sphere(div) => sphere::create_sphere_geometry(*div),
+                    ShapeType::Square => square::create_square_geometry(),
                     _ => panic!("Unsupported shape type: {:?}", st),
                 };
 
