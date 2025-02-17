@@ -1,24 +1,24 @@
 use crate::system::shape_geometry::ShapeGeometry;
-use crate::system::vertex::Vertex;
+use crate::system::vertex::ModelVertex;
 
 pub fn create_square_geometry() -> ShapeGeometry {
     let vertices = vec![
-        Vertex {
+        ModelVertex {
             position: [-0.5, 0.5, 0.0],
             normal: [0.0, 0.0, 1.0],
             tex_coords: [0.0, 1.0],
         },
-        Vertex {
+        ModelVertex {
             position: [0.5, 0.5, 0.0],
             normal: [0.0, 0.0, 1.0],
             tex_coords: [1.0, 1.0],
         },
-        Vertex {
+        ModelVertex {
             position: [0.5, -0.5, 0.0],
             normal: [0.0, 0.0, 1.0],
             tex_coords: [1.0, 0.0],
         },
-        Vertex {
+        ModelVertex {
             position: [-0.5, -0.5, 0.0],
             normal: [0.0, 0.0, 1.0],
             tex_coords: [0.0, 0.0],

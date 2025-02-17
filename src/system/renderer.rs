@@ -5,21 +5,20 @@ use std::sync::Arc;
 use image::GenericImageView;
 use log::{debug, error, info};
 use pollster::block_on;
-use wgpu::{PrimitiveState, WasmNotSend};
-use wgpu::core::device;
 use wgpu::util::{DeviceExt, RenderEncoder};
 use winit::dpi::PhysicalSize;
 use winit::event::KeyEvent;
 use winit::window::Window;
 
-use crate::system::{camera, texture, vertex};
+use crate::system::{camera, model, resources, texture, vertex};
 use crate::system::camera::{Camera, CameraUniform};
 use crate::system::camera_controller;
 use crate::system::camera_controller::CameraController;
+use crate::system::model::DrawModel;
 use crate::system::shape_geometry::{ShapeGeometryBuffers, ShapeGeometryFactory};
 use crate::system::shapes::{ShapeType, Square};
 use crate::system::shapes::Sphere;
-use crate::system::transform::TransformRaw;
+use crate::system::transform::{Transform, TransformRaw};
 
 /// 描画を行う構造体
 pub struct Renderer<'a> {
@@ -29,21 +28,31 @@ pub struct Renderer<'a> {
     pub surface_caps: wgpu::SurfaceCapabilities,
     pub surface_format: wgpu::TextureFormat,
     pub surface_config: wgpu::SurfaceConfiguration,
-    pub render_pipeline: wgpu::RenderPipeline,
-    pub camera_controller: CameraController,
+
     camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    camera_controller: CameraController,
+
+    shape_factory: ShapeGeometryFactory,
+
     spheres: Vec<Sphere>,
     sphere_transform_buffer: wgpu::Buffer,
+    sphere_render_pipeline: wgpu::RenderPipeline,
+
+    obj_model: model::Model,
+    obj_model_transforms: Vec<Transform>,
+    obj_model_transform_buffer: wgpu::Buffer,
+    obj_model_render_pipeline: wgpu::RenderPipeline,
+
     plane: Square,
     plane_transform_buffer: wgpu::Buffer,
-    shape_factory: ShapeGeometryFactory,
     depth_texture: texture::Texture,
     depth_bind_group_layout: wgpu::BindGroupLayout,
     depth_bind_group: wgpu::BindGroup,
     depth_render_pipeline: wgpu::RenderPipeline,
+
     instant_time: std::time::Instant,
 }
 
@@ -135,6 +144,28 @@ impl<'a> Renderer<'a> {
             }
         );
 
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                }
+            ],
+            label: Some("texture_bind_group_layout"),
+        });
+
         let mut shape_factory = ShapeGeometryFactory::new();
 
         let spheres = (0..10).flat_map(|z| {
@@ -162,6 +193,38 @@ impl<'a> Renderer<'a> {
         );
 
         shape_factory.create_geometry(&device, SPHERE);
+
+        let obj_model = resources::load_model(
+            "cube.obj",
+            &device,
+            &queue,
+            &texture_bind_group_layout,
+        ).unwrap();
+
+        let obj_model_transforms = (0..10).flat_map(|z| {
+            (0..10).map(move |x| {
+                let mut transform = Transform::new();
+                transform
+                    .set_position_x(x as f32 * 4.0 - 18.0)
+                    .set_position_z(z as f32 * 4.0 - 40.0)
+                    .set_rotation_x(x as f32)
+                    .set_rotation_z(z as f32);
+
+                transform
+            })
+        }).collect::<Vec<_>>();
+
+        let obj_model_transform_data = obj_model_transforms.iter()
+            .map(TransformRaw::from)
+            .collect::<Vec<_>>();
+
+        let obj_model_transform_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Obj Model Transform Buffer"),
+                contents: bytemuck::cast_slice(&obj_model_transform_data),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
 
         let mut plane = Square::new();
         plane.transform
@@ -222,17 +285,39 @@ impl<'a> Renderer<'a> {
             }
         );
 
-        let render_pipeline = Self::create_render_pipeline(
-            "render_pipeline_layout",
-            "render_pipeline",
+        let sphere_render_pipeline = Self::create_render_pipeline(
+            "sphere",
             &device,
             &[&camera_bind_group_layout],
             Self::create_vertex_state(
-                &device.create_shader_module(wgpu::include_wgsl!("../../shader/sphere_vertex.wgsl")),
-                &[vertex::Vertex::desc(), TransformRaw::desc()],
+                &device.create_shader_module(wgpu::include_wgsl!("../../res/shader/sphere_vertex.wgsl")),
+                &[vertex::ModelVertex::desc(), TransformRaw::desc()],
             ),
             Self::create_fragment_state(
-                &device.create_shader_module(wgpu::include_wgsl!("../../shader/sphere_fragment.wgsl")),
+                &device.create_shader_module(wgpu::include_wgsl!("../../res/shader/sphere_fragment.wgsl")),
+                &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            ),
+            Self::create_primitive_state(),
+            Self::create_depth_stencil_state(),
+        );
+
+        let obj_model_render_pipeline = Self::create_render_pipeline(
+            "obj_model",
+            &device,
+            &[
+                &camera_bind_group_layout,
+                &texture_bind_group_layout,
+            ],
+            Self::create_vertex_state(
+                &device.create_shader_module(wgpu::include_wgsl!("../../res/shader/model_vertex.wgsl")),
+                &[vertex::ModelVertex::desc(), TransformRaw::desc()],
+            ),
+            Self::create_fragment_state(
+                &device.create_shader_module(wgpu::include_wgsl!("../../res/shader/model_fragment.wgsl")),
                 &[Some(wgpu::ColorTargetState {
                     format: surface_format,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -244,19 +329,18 @@ impl<'a> Renderer<'a> {
         );
 
         let depth_render_pipeline = Self::create_render_pipeline(
-            "depth_render_pipeline_layout",
-            "depth_render_pipeline",
+            "depth",
             &device,
             &[
                 &camera_bind_group_layout,
                 &depth_bind_group_layout,
             ],
             Self::create_vertex_state(
-                &device.create_shader_module(wgpu::include_wgsl!("../../shader/depth_vertex.wgsl")),
-                &[vertex::Vertex::desc(), TransformRaw::desc()],
+                &device.create_shader_module(wgpu::include_wgsl!("../../res/shader/depth_vertex.wgsl")),
+                &[vertex::ModelVertex::desc(), TransformRaw::desc()],
             ),
             Self::create_fragment_state(
-                &device.create_shader_module(wgpu::include_wgsl!("../../shader/depth_fragment.wgsl")),
+                &device.create_shader_module(wgpu::include_wgsl!("../../res/shader/depth_fragment.wgsl")),
                 &[
                     Some(wgpu::ColorTargetState {
                         format: surface_format,
@@ -279,21 +363,30 @@ impl<'a> Renderer<'a> {
             surface_caps,
             surface_format,
             surface_config,
-            render_pipeline,
+
             camera,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
             camera_controller,
+
             shape_factory,
             spheres,
             sphere_transform_buffer,
+            sphere_render_pipeline,
+
+            obj_model,
+            obj_model_transforms,
+            obj_model_transform_buffer,
+            obj_model_render_pipeline,
+
             plane,
             plane_transform_buffer,
             depth_texture,
             depth_bind_group_layout,
             depth_bind_group,
             depth_render_pipeline,
+
             instant_time: std::time::Instant::now(),
         }
     }
@@ -345,7 +438,7 @@ impl<'a> Renderer<'a> {
             &wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") }
         );
 
-        // main render pass
+        // sphere render pass
         {
             let mut render_pass = encoder.begin_render_pass(
                 &wgpu::RenderPassDescriptor {
@@ -370,7 +463,7 @@ impl<'a> Renderer<'a> {
                     timestamp_writes: None,
                 });
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_pipeline(&self.sphere_render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             let sphere_geometry_buffers = self.shape_factory.get_geometry(&SPHERE).unwrap();
 
@@ -381,6 +474,41 @@ impl<'a> Renderer<'a> {
                 0..sphere_geometry_buffers.indices_count,
                 0,
                 0..self.spheres.len() as _,
+            );
+        }
+
+        // obj_model render pass
+        {
+            let mut render_pass = encoder.begin_render_pass(
+                &wgpu::RenderPassDescriptor {
+                    label: Some("Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_texture.view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+
+            render_pass.set_pipeline(&self.obj_model_render_pipeline);
+            render_pass.set_vertex_buffer(1, self.obj_model_transform_buffer.slice(..));
+
+            render_pass.draw_model_instanced(
+                &self.obj_model,
+                0..self.obj_model_transforms.len() as u32,
+                &self.camera_bind_group,
             );
         }
 
@@ -512,26 +640,27 @@ impl Renderer<'_> {
     }
 
     fn create_render_pipeline(
-        layout_label: &str,
         label: &str,
         device: &wgpu::Device,
         bind_group_layouts: &[&wgpu::BindGroupLayout],
         vertex_state: wgpu::VertexState,
         fragment_state: Option<wgpu::FragmentState>,
-        primitive_state: PrimitiveState,
+        primitive_state: wgpu::PrimitiveState,
         depth_stencil_state: Option<wgpu::DepthStencilState>,
     ) -> wgpu::RenderPipeline {
+        let layout_label = format!("{}_render_pipeline_layout", label);
         let render_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
-                label: Some(layout_label),
+                label: Some(&layout_label),
                 bind_group_layouts,
                 push_constant_ranges: &[],
             }
         );
 
+        let label = format!("{}_render_pipeline", label);
         device.create_render_pipeline(
             &wgpu::RenderPipelineDescriptor {
-                label: Some(label),
+                label: Some(&label),
                 layout: Some(&render_pipeline_layout),
                 vertex: vertex_state,
                 fragment: fragment_state,

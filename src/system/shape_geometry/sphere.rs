@@ -1,7 +1,7 @@
 use log::error;
 
 use crate::system::shape_geometry::ShapeGeometry;
-use crate::system::vertex::Vertex;
+use crate::system::vertex::ModelVertex;
 
 pub fn create_sphere_geometry(div: u16) -> ShapeGeometry {
     if div <= 2 {
@@ -18,7 +18,7 @@ pub fn create_sphere_geometry(div: u16) -> ShapeGeometry {
 }
 
 /// divが奇数の場合の球体の生成
-fn create_by_indivisible(div: u16) -> (Vec<Vertex>, Vec<u16>) {
+fn create_by_indivisible(div: u16) -> (Vec<ModelVertex>, Vec<u16>) {
     use std::f32::consts::*;
 
     let mut vertices = vec![];
@@ -30,7 +30,7 @@ fn create_by_indivisible(div: u16) -> (Vec<Vertex>, Vec<u16>) {
     let y_unit_angle = TAU / div_f32;
 
     // 上側の頂点
-    vertices.push(Vertex {
+    vertices.push(ModelVertex {
         position: [0.0, 1.0, 0.0],
         tex_coords: [0.0, 1.0],
         normal: [0.0, 1.0, 0.0],
@@ -54,7 +54,7 @@ fn create_by_indivisible(div: u16) -> (Vec<Vertex>, Vec<u16>) {
 
     // 下側の頂点
     let bottom = (y_unit_angle * half_div_f32).cos();
-    vertices.push(Vertex {
+    vertices.push(ModelVertex {
         position: [0.0, bottom, 0.0],
         tex_coords: [0.0, 0.0],
         normal: [0.0, -1.0, 0.0],
@@ -66,7 +66,7 @@ fn create_by_indivisible(div: u16) -> (Vec<Vertex>, Vec<u16>) {
 }
 
 /// divが偶数の場合の球体の生成
-fn create_by_divisible(div: u16) -> (Vec<Vertex>, Vec<u16>) {
+fn create_by_divisible(div: u16) -> (Vec<ModelVertex>, Vec<u16>) {
     use std::f32::consts::*;
 
     let mut vertices = vec![];
@@ -76,7 +76,7 @@ fn create_by_divisible(div: u16) -> (Vec<Vertex>, Vec<u16>) {
     let y_unit_angle = PI / half_div_f32;
 
     // 上側の頂点
-    vertices.push(Vertex {
+    vertices.push(ModelVertex {
         position: [0.0, 1.0, 0.0],
         tex_coords: [0.0, 1.0],
         normal: [0.0, 1.0, 0.0],
@@ -99,7 +99,7 @@ fn create_by_divisible(div: u16) -> (Vec<Vertex>, Vec<u16>) {
     }
 
     // 下側の頂点
-    vertices.push(Vertex {
+    vertices.push(ModelVertex {
         position: [0.0, -1.0, 0.0],
         tex_coords: [0.0, 0.0],
         normal: [0.0, -1.0, 0.0],
@@ -110,7 +110,7 @@ fn create_by_divisible(div: u16) -> (Vec<Vertex>, Vec<u16>) {
     (vertices, indices)
 }
 
-fn get_circle_vertices(div: u16, radius: f32, y: f32) -> Vec<Vertex> {
+fn get_circle_vertices(div: u16, radius: f32, y: f32) -> Vec<ModelVertex> {
     use std::f32::consts::*;
 
     let mut vertices = vec![];
@@ -128,7 +128,7 @@ fn get_circle_vertices(div: u16, radius: f32, y: f32) -> Vec<Vertex> {
 
         let dist = (x * x + y * y + z * z).sqrt();
 
-        vertices.push(Vertex {
+        vertices.push(ModelVertex {
             position: [x, y, z],
             tex_coords: [cos_xz * 0.5 + 0.5, sin_xz * 0.5 + 0.5],
             normal: [x / dist, y / dist, z / dist],
