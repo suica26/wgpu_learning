@@ -3,7 +3,7 @@ use std::mem;
 use cgmath::{EuclideanSpace, Euler, Matrix4, Point3, Quaternion, Rad, SquareMatrix, Vector3};
 use winit::dpi::Position;
 
-/// Transform component
+/// Transform情報を保持する構造体
 pub struct Transform {
     position: Point3<f32>,
     angle: Euler<Rad<f32>>,
@@ -39,8 +39,90 @@ impl Transform {
         translation * rotation * scale
     }
 
+    pub fn add_position(&mut self, position: Vector3<f32>) -> &mut Self {
+        self.position += position;
+        self
+    }
+
+    pub fn add_position_x(&mut self, x: f32) -> &mut Self {
+        self.position.x += x;
+        self
+    }
+
+    pub fn add_position_y(&mut self, y: f32) -> &mut Self {
+        self.position.y += y;
+        self
+    }
+
+    pub fn add_position_z(&mut self, z: f32) -> &mut Self {
+        self.position.z += z;
+        self
+    }
+
+    pub fn add_rotation(&mut self, rotation: Euler<Rad<f32>>) -> &mut Self {
+        self.add_rotation_x(rotation.x.0);
+        self.add_rotation_y(rotation.y.0);
+        self.add_rotation_z(rotation.z.0);
+        self
+    }
+
+    pub fn add_rotation_x(&mut self, x: f32) -> &mut Self {
+        self.angle.x += Rad(x);
+        self
+    }
+
+    pub fn add_rotation_y(&mut self, y: f32) -> &mut Self {
+        self.angle.y += Rad(y);
+        self
+    }
+
+    pub fn add_rotation_z(&mut self, z: f32) -> &mut Self {
+        self.angle.z += Rad(z);
+        self
+    }
+
+    pub fn add_scale(&mut self, scale: f32) -> &mut Self {
+        self.scale += Vector3::new(scale, scale, scale);
+        self
+    }
+
+    pub fn add_scale_by_vector(&mut self, scale: Vector3<f32>) -> &mut Self {
+        self.scale += scale;
+        self
+    }
+
+    pub fn add_scale_x(&mut self, x: f32) -> &mut Self {
+        self.scale.x += x;
+        self
+    }
+
+    pub fn add_scale_y(&mut self, y: f32) -> &mut Self {
+        self.scale.y += y;
+        self
+    }
+
+    pub fn add_scale_z(&mut self, z: f32) -> &mut Self {
+        self.scale.z += z;
+        self
+    }
+
     pub fn set_position(&mut self, position: Point3<f32>) -> &mut Self {
         self.position = position;
+        self
+    }
+
+    pub fn set_position_x(&mut self, x: f32) -> &mut Self {
+        self.position.x = x;
+        self
+    }
+
+    pub fn set_position_y(&mut self, y: f32) -> &mut Self {
+        self.position.y = y;
+        self
+    }
+
+    pub fn set_position_z(&mut self, z: f32) -> &mut Self {
+        self.position.z = z;
         self
     }
 
@@ -49,12 +131,48 @@ impl Transform {
         self
     }
 
-    pub fn set_scale(&mut self, scale: Vector3<f32>) -> &mut Self {
+    pub fn set_rotation_x(&mut self, x: f32) -> &mut Self {
+        self.angle.x = Rad(x);
+        self
+    }
+
+    pub fn set_rotation_y(&mut self, y: f32) -> &mut Self {
+        self.angle.y = Rad(y);
+        self
+    }
+
+    pub fn set_rotation_z(&mut self, z: f32) -> &mut Self {
+        self.angle.z = Rad(z);
+        self
+    }
+
+    pub fn set_scale(&mut self, scale: f32) -> &mut Self {
+        self.scale = Vector3::new(scale, scale, scale);
+        self
+    }
+
+    pub fn set_scale_by_vector(&mut self, scale: Vector3<f32>) -> &mut Self {
         self.scale = scale;
+        self
+    }
+
+    pub fn set_scale_x(&mut self, x: f32) -> &mut Self {
+        self.scale.x = x;
+        self
+    }
+
+    pub fn set_scale_y(&mut self, y: f32) -> &mut Self {
+        self.scale.y = y;
+        self
+    }
+
+    pub fn set_scale_z(&mut self, z: f32) -> &mut Self {
+        self.scale.z = z;
         self
     }
 }
 
+/// Transform情報をGPUに渡すための構造体
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct TransformRaw {

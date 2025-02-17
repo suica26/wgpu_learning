@@ -1,7 +1,7 @@
 use std::process;
 use std::sync::Arc;
 
-use log::{debug, error, info};
+use log::{error, info};
 use winit::application::ApplicationHandler;
 use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
@@ -9,7 +9,7 @@ use winit::keyboard::Key::Named;
 use winit::keyboard::NamedKey::Escape;
 use winit::window::{Window, WindowButtons, WindowId};
 
-use crate::system::rendering::renderer::Renderer;
+use crate::system::renderer::Renderer;
 
 pub struct Application<'a> {
     pub window: Option<Arc<Window>>,
@@ -29,7 +29,7 @@ impl Application<'_> {
         use std::env;
         use winit::event_loop::{ControlFlow, EventLoop};
 
-        env::set_var("RUST_LOG", "debug");
+        env::set_var("RUST_LOG", "info");
         env_logger::init();
 
         let event_loop = EventLoop::new().unwrap();
@@ -37,7 +37,7 @@ impl Application<'_> {
         event_loop.set_control_flow(ControlFlow::Wait);
 
         match event_loop.run_app(self) {
-            Ok(_) => debug!("The event loop has exited cleanly"),
+            Ok(_) => info!("The event loop has exited cleanly"),
             Err(e) => error!("An error occurred: {:?}", e),
         }
     }
