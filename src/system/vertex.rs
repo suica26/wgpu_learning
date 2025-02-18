@@ -1,9 +1,3 @@
-use std::ops::Index;
-use std::process::id;
-
-use image::flat::NormalForm;
-use log::debug;
-
 pub trait Vertex {
     fn desc() -> wgpu::VertexBufferLayout<'static>;
 }

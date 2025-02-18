@@ -1,21 +1,16 @@
-use std::future::Future;
-use std::ops::Sub;
 use std::sync::Arc;
 
-use image::GenericImageView;
-use log::{debug, error, info};
+use log::{error, info};
 use pollster::block_on;
-use wgpu::util::{DeviceExt, RenderEncoder};
-use winit::dpi::PhysicalSize;
+use wgpu::util::DeviceExt;
 use winit::event::KeyEvent;
 use winit::window::Window;
 
-use crate::system::{camera, model, resources, texture, vertex};
+use crate::system::{model, resources, texture, vertex};
 use crate::system::camera::{Camera, CameraUniform};
-use crate::system::camera_controller;
 use crate::system::camera_controller::CameraController;
 use crate::system::model::DrawModel;
-use crate::system::shape_geometry::{ShapeGeometryBuffers, ShapeGeometryFactory};
+use crate::system::shape_geometry::ShapeGeometryFactory;
 use crate::system::shapes::{ShapeType, Square};
 use crate::system::shapes::Sphere;
 use crate::system::transform::{Transform, TransformRaw};

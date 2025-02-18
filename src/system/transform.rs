@@ -1,7 +1,4 @@
-use std::mem;
-
-use cgmath::{EuclideanSpace, Euler, Matrix4, Point3, Quaternion, Rad, SquareMatrix, Vector3};
-use winit::dpi::Position;
+use cgmath::{EuclideanSpace, Euler, Matrix4, Point3, Quaternion, Rad, Vector3};
 
 /// Transform情報を保持する構造体
 pub struct Transform {
@@ -182,10 +179,6 @@ pub struct TransformRaw {
 impl TransformRaw {
     pub fn from(transform: &Transform) -> Self {
         Self { model: transform.get_matrix().into() }
-    }
-
-    pub fn update(&mut self, transform: &Transform) {
-        self.model = transform.get_matrix().into();
     }
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
