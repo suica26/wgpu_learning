@@ -97,8 +97,7 @@ impl<'a> ApplicationHandler for Application<'a> {
             return;
         }
 
-        let window_attributes = Window::default_attributes()
-            .with_title("wgpu learning");
+        let window_attributes = Window::default_attributes().with_title("wgpu learning");
         let window = match event_loop.create_window(window_attributes) {
             Ok(n) => Arc::new(n),
             Err(e) => {
@@ -117,12 +116,21 @@ impl<'a> ApplicationHandler for Application<'a> {
         self.renderer = Some(renderer);
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        window_id: WindowId,
+        event: WindowEvent,
+    ) {
         match event {
             WindowEvent::CloseRequested => self.close_requested(event_loop),
             WindowEvent::KeyboardInput { event, .. } => self.keyboard_input(event),
             WindowEvent::RedrawRequested => self.redraw_requested(),
-            WindowEvent::Resized(size) => self.renderer.as_mut().unwrap().resize(size.width, size.height),
+            WindowEvent::Resized(size) => self
+                .renderer
+                .as_mut()
+                .unwrap()
+                .resize(size.width, size.height),
             _ => {}
         }
 

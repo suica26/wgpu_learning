@@ -1,4 +1,4 @@
-use cgmath::{EuclideanSpace, Euler, Matrix4, Point3, Quaternion, Rad, Vector3};
+use cgmath::{EuclideanSpace, Euler, Matrix3, Matrix4, Point3, Quaternion, Rad, Vector3};
 
 /// Transform情報を保持する構造体
 pub struct Transform {
@@ -174,11 +174,15 @@ impl Transform {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct TransformRaw {
     pub model: [[f32; 4]; 4],
+    pub normal: [[f32; 3]; 3],
 }
 
 impl TransformRaw {
     pub fn from(transform: &Transform) -> Self {
-        Self { model: transform.get_matrix().into() }
+        Self {
+            model: transform.get_matrix().into(),
+            normal: Matrix3::from(Quaternion::from(transform.get_rotation())).into(),
+        }
     }
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -205,6 +209,21 @@ impl TransformRaw {
                     offset: size_of::<[f32; 12]>() as wgpu::BufferAddress,
                     format: wgpu::VertexFormat::Float32x4,
                     shader_location: 8,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 16]>() as wgpu::BufferAddress,
+                    format: wgpu::VertexFormat::Float32x3,
+                    shader_location: 9,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 19]>() as wgpu::BufferAddress,
+                    format: wgpu::VertexFormat::Float32x3,
+                    shader_location: 10,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 22]>() as wgpu::BufferAddress,
+                    format: wgpu::VertexFormat::Float32x3,
+                    shader_location: 11,
                 },
             ],
         }
