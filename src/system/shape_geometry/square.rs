@@ -7,21 +7,29 @@ pub fn create_square_geometry() -> ShapeGeometry {
             position: [-0.5, 0.5, 0.0],
             normal: [0.0, 0.0, 1.0],
             tex_coords: [0.0, 1.0],
+            tangent: [1.0, 0.0, 0.0],
+            bitangent: [0.0, 1.0, 0.0],
         },
         ModelVertex {
             position: [0.5, 0.5, 0.0],
             normal: [0.0, 0.0, 1.0],
             tex_coords: [1.0, 1.0],
+            tangent: [1.0, 0.0, 0.0],
+            bitangent: [0.0, 1.0, 0.0],
         },
         ModelVertex {
             position: [0.5, -0.5, 0.0],
             normal: [0.0, 0.0, 1.0],
             tex_coords: [1.0, 0.0],
+            tangent: [1.0, 0.0, 0.0],
+            bitangent: [0.0, 1.0, 0.0],
         },
         ModelVertex {
             position: [-0.5, -0.5, 0.0],
             normal: [0.0, 0.0, 1.0],
             tex_coords: [0.0, 0.0],
+            tangent: [1.0, 0.0, 0.0],
+            bitangent: [0.0, 1.0, 0.0],
         },
     ];
 

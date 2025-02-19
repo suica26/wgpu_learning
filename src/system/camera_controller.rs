@@ -1,4 +1,3 @@
-use cgmath::InnerSpace;
 use winit::event::{ElementState, KeyEvent};
 use winit::keyboard;
 

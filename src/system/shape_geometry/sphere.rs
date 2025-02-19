@@ -34,6 +34,8 @@ fn create_by_indivisible(div: u16) -> (Vec<ModelVertex>, Vec<u16>) {
         position: [0.0, 1.0, 0.0],
         tex_coords: [0.0, 1.0],
         normal: [0.0, 1.0, 0.0],
+        tangent: [1.0, 0.0, 0.0],
+        bitangent: [0.0, 0.0, 1.0],
     });
 
     // y軸方向のループ
@@ -44,11 +46,7 @@ fn create_by_indivisible(div: u16) -> (Vec<ModelVertex>, Vec<u16>) {
         // 円周上の頂点を追加
         let circle_radius = (y_unit_angle * i_f32).sin();
         let circle_y = cos_y;
-        let circle_vertices = get_circle_vertices(
-            div,
-            circle_radius,
-            circle_y,
-        );
+        let circle_vertices = get_circle_vertices(div, circle_radius, circle_y);
         vertices.extend(circle_vertices);
     }
 
@@ -58,6 +56,8 @@ fn create_by_indivisible(div: u16) -> (Vec<ModelVertex>, Vec<u16>) {
         position: [0.0, bottom, 0.0],
         tex_coords: [0.0, 0.0],
         normal: [0.0, -1.0, 0.0],
+        tangent: [1.0, 0.0, 0.0],
+        bitangent: [0.0, 0.0, 1.0],
     });
 
     let indices = create_indices(div, vertices.len() as u16);
@@ -80,6 +80,8 @@ fn create_by_divisible(div: u16) -> (Vec<ModelVertex>, Vec<u16>) {
         position: [0.0, 1.0, 0.0],
         tex_coords: [0.0, 1.0],
         normal: [0.0, 1.0, 0.0],
+        tangent: [1.0, 0.0, 0.0],
+        bitangent: [0.0, 0.0, 1.0],
     });
 
     // y軸方向のループ
@@ -90,11 +92,7 @@ fn create_by_divisible(div: u16) -> (Vec<ModelVertex>, Vec<u16>) {
         // 円周上の頂点を追加
         let circle_radius = (y_unit_angle * i_f32).sin();
         let circle_y = cos_y;
-        let circle_vertices = get_circle_vertices(
-            div,
-            circle_radius,
-            circle_y,
-        );
+        let circle_vertices = get_circle_vertices(div, circle_radius, circle_y);
         vertices.extend(circle_vertices);
     }
 
@@ -103,6 +101,8 @@ fn create_by_divisible(div: u16) -> (Vec<ModelVertex>, Vec<u16>) {
         position: [0.0, -1.0, 0.0],
         tex_coords: [0.0, 0.0],
         normal: [0.0, -1.0, 0.0],
+        tangent: [1.0, 0.0, 0.0],
+        bitangent: [0.0, 0.0, 1.0],
     });
 
     let indices = create_indices(div, vertices.len() as u16);
@@ -132,6 +132,8 @@ fn get_circle_vertices(div: u16, radius: f32, y: f32) -> Vec<ModelVertex> {
             position: [x, y, z],
             tex_coords: [cos_xz * 0.5 + 0.5, sin_xz * 0.5 + 0.5],
             normal: [x / dist, y / dist, z / dist],
+            tangent: [-sin_xz, 0.0, cos_xz],
+            bitangent: [cos_xz * y, -dist, sin_xz * y],
         });
     }
 
@@ -149,11 +151,7 @@ fn create_indices(div: u16, vertices_num: u16) -> Vec<u16> {
         indices.push(i);
     }
 
-    let loop_num = if div % 2 == 0 {
-        div / 2
-    } else {
-        (div + 1) / 2
-    } - 2;
+    let loop_num = if div % 2 == 0 { div / 2 } else { (div + 1) / 2 } - 2;
 
     for i in 0..loop_num {
         let offset = 1 + (i * div);
