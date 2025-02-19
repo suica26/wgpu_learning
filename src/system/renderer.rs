@@ -45,6 +45,7 @@ pub struct Renderer<'a> {
     sphere_render_pipeline: wgpu::RenderPipeline,
 
     obj_model: model::Model,
+    debug_material: model::Material,
     obj_model_transforms: Vec<Transform>,
     obj_model_transform_buffer: wgpu::Buffer,
     obj_model_render_pipeline: wgpu::RenderPipeline,
@@ -194,6 +195,22 @@ impl<'a> Renderer<'a> {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
                 ],
                 label: Some("texture_bind_group_layout"),
             });
@@ -231,6 +248,36 @@ impl<'a> Renderer<'a> {
 
         let obj_model =
             resources::load_model("cube.obj", &device, &queue, &texture_bind_group_layout).unwrap();
+
+        let debug_material = {
+            let diffuse_bytes = include_bytes!("../../res/cobble-diffuse.png");
+            let normal_bytes = include_bytes!("../../res/cobble-normal.png");
+
+            let diffuse_texture = texture::Texture::from_bytes(
+                &device,
+                &queue,
+                diffuse_bytes,
+                "res/alt-diffuse.png",
+                false,
+            )
+            .unwrap();
+            let normal_texture = texture::Texture::from_bytes(
+                &device,
+                &queue,
+                normal_bytes,
+                "res/alt-normal.png",
+                false,
+            )
+            .unwrap();
+
+            model::Material::new(
+                &device,
+                "alt-material",
+                diffuse_texture,
+                normal_texture,
+                &texture_bind_group_layout,
+            )
+        };
 
         let obj_model_transforms = (0..10)
             .flat_map(|z| {
@@ -438,6 +485,7 @@ impl<'a> Renderer<'a> {
             sphere_render_pipeline,
 
             obj_model,
+            debug_material,
             obj_model_transforms,
             obj_model_transform_buffer,
             obj_model_render_pipeline,
@@ -559,8 +607,9 @@ impl<'a> Renderer<'a> {
             // オブジェクトモデル
             render_pass.set_pipeline(&self.obj_model_render_pipeline);
             render_pass.set_vertex_buffer(1, self.obj_model_transform_buffer.slice(..));
-            render_pass.draw_model_instanced(
+            render_pass.draw_model_instanced_with_material(
                 &self.obj_model,
+                &self.debug_material,
                 0..self.obj_model_transforms.len() as u32,
                 &self.camera_bind_group,
                 &self.light_bind_group,
@@ -627,7 +676,7 @@ impl<'a> Renderer<'a> {
                 .transform
                 .set_position(cgmath::Point3::new(
                     (index % 10) as f32 * 3.0 - 13.5,
-                    (time * 4.0 + index as f32).sin() * 10.0,
+                    (time * 0.5 + index as f32).sin() * 10.0,
                     (index / 10) as f32 * 3.0 - 13.5,
                 ))
                 .set_rotation(cgmath::Euler::new(
