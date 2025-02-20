@@ -35,5 +35,5 @@ pub fn create_square_geometry() -> ShapeGeometry {
 
     let indices = vec![0, 1, 2, 0, 2, 3];
 
-    ShapeGeometry::from(vertices.to_vec(), indices.to_vec())
+    ShapeGeometry::from((vertices.to_vec(), indices.to_vec()))
 }

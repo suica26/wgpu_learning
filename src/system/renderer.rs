@@ -9,7 +9,6 @@ use winit::window::Window;
 
 use crate::system::camera::{Camera, CameraUniform};
 use crate::system::camera_controller::CameraController;
-use crate::system::model::DrawModel;
 use crate::system::shape_geometry::ShapeGeometryFactory;
 use crate::system::shapes::Sphere;
 use crate::system::shapes::{ShapeType, Square};
@@ -17,6 +16,7 @@ use crate::system::transform::{Transform, TransformRaw};
 use crate::system::{light, model, resources, texture, vertex};
 
 use super::model::DrawLight;
+use super::shape_geometry::ShapeGeometryBuffers;
 
 /// 描画を行う構造体
 pub struct Renderer<'a> {
@@ -49,6 +49,16 @@ pub struct Renderer<'a> {
     obj_model_transforms: Vec<Transform>,
     obj_model_transform_buffer: wgpu::Buffer,
     obj_model_render_pipeline: wgpu::RenderPipeline,
+
+    pmx_lumine_model_geometry_buffers: ShapeGeometryBuffers,
+    pmx_lumine_model_transform: Transform,
+    pmx_lumine_model_transform_buffer: wgpu::Buffer,
+    pmx_lumine_model_render_pipeline: wgpu::RenderPipeline,
+
+    pmx_barbara_model_geometry_buffers: ShapeGeometryBuffers,
+    pmx_barbara_model_transform: Transform,
+    pmx_barbara_model_transform_buffer: wgpu::Buffer,
+    pmx_barbara_model_render_pipeline: wgpu::RenderPipeline,
 
     plane: Square,
     plane_transform_buffer: wgpu::Buffer,
@@ -247,7 +257,8 @@ impl<'a> Renderer<'a> {
         shape_factory.create_geometry(&device, SPHERE);
 
         let obj_model =
-            resources::load_model("cube.obj", &device, &queue, &texture_bind_group_layout).unwrap();
+            resources::load_obj_model("cube.obj", &device, &queue, &texture_bind_group_layout)
+                .unwrap();
 
         let debug_material = {
             let diffuse_bytes = include_bytes!("../../res/cobble-diffuse.png");
@@ -306,6 +317,46 @@ impl<'a> Renderer<'a> {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Obj Model Transform Buffer"),
                 contents: bytemuck::cast_slice(&obj_model_transform_data),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        let pmx_lumine_model_geometry_buffers =
+            match resources::load_pmx_model("lumine/lumine.pmx", &device) {
+                Ok(buffers) => buffers,
+                Err(e) => {
+                    error!("Failed to load PMX model: {:?}", e);
+                    std::process::exit(1);
+                }
+            };
+        let mut pmx_lumine_model_transform = Transform::new();
+        pmx_lumine_model_transform
+            .set_position_x(-20.0)
+            .set_position_z(40.0)
+            .set_rotation_y(std::f32::consts::PI);
+        let pmx_lumine_model_transform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("PMX Lumine Model Transform Buffer"),
+                contents: bytemuck::cast_slice(&[TransformRaw::from(&pmx_lumine_model_transform)]),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        let pmx_barbara_model_geometry_buffers =
+            match resources::load_pmx_model("barbara/barbara.pmx", &device) {
+                Ok(buffers) => buffers,
+                Err(e) => {
+                    error!("Failed to load PMX model: {:?}", e);
+                    std::process::exit(1);
+                }
+            };
+        let mut pmx_barbara_model_transform = Transform::new();
+        pmx_barbara_model_transform
+            .set_position_x(20.0)
+            .set_position_z(40.0)
+            .set_rotation_y(std::f32::consts::PI);
+        let pmx_barbara_model_transform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("PMX Barbara Model Transform Buffer"),
+                contents: bytemuck::cast_slice(&[TransformRaw::from(&pmx_barbara_model_transform)]),
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
@@ -413,6 +464,50 @@ impl<'a> Renderer<'a> {
             Self::create_depth_stencil_state(texture::Texture::DEPTH_FORMAT),
         );
 
+        let lumine_shader =
+            device.create_shader_module(wgpu::include_wgsl!("../../res/shader/pmx_model.wgsl"));
+        let pmx_lumine_model_render_pipeline = Self::create_render_pipeline(
+            "lumine",
+            &device,
+            &[&camera_bind_group_layout, &light_bind_group_layout],
+            Self::create_vertex_state(
+                &lumine_shader,
+                &[vertex::ModelVertex::desc(), TransformRaw::desc()],
+            ),
+            Self::create_fragment_state(
+                &lumine_shader,
+                &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            ),
+            Self::create_primitive_state(),
+            Self::create_depth_stencil_state(texture::Texture::DEPTH_FORMAT),
+        );
+
+        let barbara_shader =
+            device.create_shader_module(wgpu::include_wgsl!("../../res/shader/pmx_model.wgsl"));
+        let pmx_barbara_model_render_pipeline = Self::create_render_pipeline(
+            "barbara",
+            &device,
+            &[&camera_bind_group_layout, &light_bind_group_layout],
+            Self::create_vertex_state(
+                &barbara_shader,
+                &[vertex::ModelVertex::desc(), TransformRaw::desc()],
+            ),
+            Self::create_fragment_state(
+                &barbara_shader,
+                &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            ),
+            Self::create_primitive_state(),
+            Self::create_depth_stencil_state(texture::Texture::DEPTH_FORMAT),
+        );
+
         let light_shader =
             device.create_shader_module(wgpu::include_wgsl!("../../res/shader/light.wgsl"));
         let light_render_pipeline = Self::create_render_pipeline(
@@ -489,6 +584,16 @@ impl<'a> Renderer<'a> {
             obj_model_transforms,
             obj_model_transform_buffer,
             obj_model_render_pipeline,
+
+            pmx_lumine_model_geometry_buffers,
+            pmx_lumine_model_transform,
+            pmx_lumine_model_transform_buffer,
+            pmx_lumine_model_render_pipeline,
+
+            pmx_barbara_model_geometry_buffers,
+            pmx_barbara_model_transform,
+            pmx_barbara_model_transform_buffer,
+            pmx_barbara_model_render_pipeline,
 
             plane,
             plane_transform_buffer,
@@ -614,6 +719,32 @@ impl<'a> Renderer<'a> {
                 &self.camera_bind_group,
                 &self.light_bind_group,
             );
+
+            // 蛍のPMXモデル
+            render_pass.set_pipeline(&self.pmx_lumine_model_render_pipeline);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.light_bind_group, &[]);
+            let lumine_geometry_buffers = &self.pmx_lumine_model_geometry_buffers;
+            render_pass.set_vertex_buffer(0, lumine_geometry_buffers.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.pmx_lumine_model_transform_buffer.slice(..));
+            render_pass.set_index_buffer(
+                lumine_geometry_buffers.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
+            render_pass.draw_indexed(0..lumine_geometry_buffers.indices_count, 0, 0..1);
+
+            // バーバラのPMXモデル
+            render_pass.set_pipeline(&self.pmx_barbara_model_render_pipeline);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.light_bind_group, &[]);
+            let barbara_geometry_buffers = &self.pmx_barbara_model_geometry_buffers;
+            render_pass.set_vertex_buffer(0, barbara_geometry_buffers.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.pmx_barbara_model_transform_buffer.slice(..));
+            render_pass.set_index_buffer(
+                barbara_geometry_buffers.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
+            render_pass.draw_indexed(0..barbara_geometry_buffers.indices_count, 0, 0..1);
         }
 
         // 深度テクスチャRenderPass

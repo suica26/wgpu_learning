@@ -1,7 +1,5 @@
 use std::ops::Range;
 
-use wgpu::core::device;
-
 use crate::system::texture;
 
 pub struct Model {

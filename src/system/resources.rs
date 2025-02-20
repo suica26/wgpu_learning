@@ -1,10 +1,14 @@
 use std::io::{BufReader, Cursor};
 
+use anyhow::Ok;
 use wgpu::util::DeviceExt;
 
 use texture::Texture;
+use PMXUtil::reader::ModelInfoStage;
 
 use crate::system::{model, texture, vertex};
+
+use super::shape_geometry::{ShapeGeometry, ShapeGeometryBuffers};
 
 pub fn load_string(file_name: &str) -> anyhow::Result<String> {
     let path = std::path::Path::new(env!("OUT_DIR"))
@@ -30,7 +34,7 @@ pub fn load_texture(
     Texture::from_bytes(device, queue, &data, file_name, is_normal_map)
 }
 
-pub fn load_model(
+pub fn load_obj_model(
     file_name: &str,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -208,4 +212,43 @@ pub fn load_model(
         .collect::<Vec<_>>();
 
     Ok(model::Model { meshes, materials })
+}
+
+pub fn load_pmx_model(
+    file_name: &str,
+    device: &wgpu::Device,
+) -> anyhow::Result<ShapeGeometryBuffers> {
+    let path = std::path::Path::new(env!("OUT_DIR"))
+        .join("res")
+        .join(file_name);
+    let loader = ModelInfoStage::open(path).unwrap();
+
+    let (_, ns) = loader.read();
+    let (vertices, ns) = ns.read();
+    let (faces, _) = ns.read();
+    // let (textures, ns) = ns.read();
+    // let (materials, ns) = ns.read();
+
+    let vertices = vertices
+        .iter()
+        .map(|v| vertex::ModelVertex {
+            position: v.position,
+            tex_coords: v.uv,
+            normal: v.norm,
+            tangent: [0.0; 3],
+            bitangent: [0.0; 3],
+        })
+        .collect::<Vec<_>>();
+
+    let indices = faces
+        .iter()
+        .map(|f| f.vertices)
+        .flat_map(|f| f)
+        .map(|f| f as u16)
+        .collect::<Vec<_>>();
+
+    Ok(ShapeGeometryBuffers::from((
+        device,
+        ShapeGeometry::from((vertices, indices)),
+    )))
 }
