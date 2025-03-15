@@ -13,10 +13,10 @@ use crate::system::shape_geometry::ShapeGeometryFactory;
 use crate::system::shapes::Sphere;
 use crate::system::shapes::{ShapeType, Square};
 use crate::system::transform::{Transform, TransformRaw};
-use crate::system::{light, model, resources, texture, vertex};
+use crate::system::{light, obj_model, resources, texture, vertex};
 
-use super::model::DrawLight;
-use super::shape_geometry::ShapeGeometryBuffers;
+use super::obj_model::DrawLight;
+use super::pmx_model;
 
 /// 描画を行う構造体
 pub struct Renderer<'a> {
@@ -44,18 +44,18 @@ pub struct Renderer<'a> {
     sphere_transform_buffer: wgpu::Buffer,
     sphere_render_pipeline: wgpu::RenderPipeline,
 
-    obj_model: model::Model,
-    debug_material: model::Material,
+    obj_model: obj_model::ObjModel,
+    debug_material: obj_model::ObjMaterial,
     obj_model_transforms: Vec<Transform>,
     obj_model_transform_buffer: wgpu::Buffer,
     obj_model_render_pipeline: wgpu::RenderPipeline,
 
-    pmx_lumine_model_geometry_buffers: ShapeGeometryBuffers,
+    pmx_lumine_model: pmx_model::PMXModel,
     pmx_lumine_model_transform: Transform,
     pmx_lumine_model_transform_buffer: wgpu::Buffer,
     pmx_lumine_model_render_pipeline: wgpu::RenderPipeline,
 
-    pmx_barbara_model_geometry_buffers: ShapeGeometryBuffers,
+    pmx_barbara_model: pmx_model::PMXModel,
     pmx_barbara_model_transform: Transform,
     pmx_barbara_model_transform_buffer: wgpu::Buffer,
     pmx_barbara_model_render_pipeline: wgpu::RenderPipeline,
@@ -222,7 +222,7 @@ impl<'a> Renderer<'a> {
                         count: None,
                     },
                 ],
-                label: Some("texture_bind_group_layout"),
+                label: Some("Obj Model Texture Bind Group Layout"),
             });
 
         let mut shape_factory = ShapeGeometryFactory::new();
@@ -281,7 +281,7 @@ impl<'a> Renderer<'a> {
             )
             .unwrap();
 
-            model::Material::new(
+            obj_model::ObjMaterial::new(
                 &device,
                 "alt-material",
                 diffuse_texture,
@@ -320,14 +320,42 @@ impl<'a> Renderer<'a> {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        let pmx_lumine_model_geometry_buffers =
-            match resources::load_pmx_model("lumine/lumine.pmx", &device) {
-                Ok(buffers) => buffers,
-                Err(e) => {
-                    error!("Failed to load PMX model: {:?}", e);
-                    std::process::exit(1);
-                }
-            };
+        let pmx_model_texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("PMX Model Texture Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let pmx_lumine_model = match resources::load_pmx_model(
+            "lumine",
+            "lumine.pmx",
+            &device,
+            &queue,
+            &pmx_model_texture_bind_group_layout,
+        ) {
+            Ok(model) => model,
+            Err(e) => {
+                error!("Failed to load PMX model: {:?}", e);
+                std::process::exit(1);
+            }
+        };
         let mut pmx_lumine_model_transform = Transform::new();
         pmx_lumine_model_transform
             .set_position_x(-20.0)
@@ -340,14 +368,19 @@ impl<'a> Renderer<'a> {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        let pmx_barbara_model_geometry_buffers =
-            match resources::load_pmx_model("barbara/barbara.pmx", &device) {
-                Ok(buffers) => buffers,
-                Err(e) => {
-                    error!("Failed to load PMX model: {:?}", e);
-                    std::process::exit(1);
-                }
-            };
+        let pmx_barbara_model = match resources::load_pmx_model(
+            "barbara",
+            "barbara.pmx",
+            &device,
+            &queue,
+            &pmx_model_texture_bind_group_layout,
+        ) {
+            Ok(model) => model,
+            Err(e) => {
+                error!("Failed to load PMX model: {:?}", e);
+                std::process::exit(1);
+            }
+        };
         let mut pmx_barbara_model_transform = Transform::new();
         pmx_barbara_model_transform
             .set_position_x(20.0)
@@ -469,7 +502,11 @@ impl<'a> Renderer<'a> {
         let pmx_lumine_model_render_pipeline = Self::create_render_pipeline(
             "lumine",
             &device,
-            &[&camera_bind_group_layout, &light_bind_group_layout],
+            &[
+                &pmx_model_texture_bind_group_layout,
+                &camera_bind_group_layout,
+                &light_bind_group_layout,
+            ],
             Self::create_vertex_state(
                 &lumine_shader,
                 &[vertex::ModelVertex::desc(), TransformRaw::desc()],
@@ -491,7 +528,11 @@ impl<'a> Renderer<'a> {
         let pmx_barbara_model_render_pipeline = Self::create_render_pipeline(
             "barbara",
             &device,
-            &[&camera_bind_group_layout, &light_bind_group_layout],
+            &[
+                &pmx_model_texture_bind_group_layout,
+                &camera_bind_group_layout,
+                &light_bind_group_layout,
+            ],
             Self::create_vertex_state(
                 &barbara_shader,
                 &[vertex::ModelVertex::desc(), TransformRaw::desc()],
@@ -585,12 +626,12 @@ impl<'a> Renderer<'a> {
             obj_model_transform_buffer,
             obj_model_render_pipeline,
 
-            pmx_lumine_model_geometry_buffers,
+            pmx_lumine_model,
             pmx_lumine_model_transform,
             pmx_lumine_model_transform_buffer,
             pmx_lumine_model_render_pipeline,
 
-            pmx_barbara_model_geometry_buffers,
+            pmx_barbara_model,
             pmx_barbara_model_transform,
             pmx_barbara_model_transform_buffer,
             pmx_barbara_model_render_pipeline,
@@ -709,7 +750,7 @@ impl<'a> Renderer<'a> {
                 0..self.spheres.len() as _,
             );
 
-            // オブジェクトモデル
+            // Obj Model Rendering
             render_pass.set_pipeline(&self.obj_model_render_pipeline);
             render_pass.set_vertex_buffer(1, self.obj_model_transform_buffer.slice(..));
             render_pass.draw_model_instanced_with_material(
@@ -720,31 +761,32 @@ impl<'a> Renderer<'a> {
                 &self.light_bind_group,
             );
 
-            // 蛍のPMXモデル
+            // PMX Model Rendering
+            // Lumine
             render_pass.set_pipeline(&self.pmx_lumine_model_render_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.light_bind_group, &[]);
-            let lumine_geometry_buffers = &self.pmx_lumine_model_geometry_buffers;
-            render_pass.set_vertex_buffer(0, lumine_geometry_buffers.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(0, self.pmx_lumine_model.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.pmx_lumine_model_transform_buffer.slice(..));
-            render_pass.set_index_buffer(
-                lumine_geometry_buffers.index_buffer.slice(..),
-                wgpu::IndexFormat::Uint16,
-            );
-            render_pass.draw_indexed(0..lumine_geometry_buffers.indices_count, 0, 0..1);
+            for parts in &self.pmx_lumine_model.parts {
+                render_pass.set_bind_group(0, &parts.texture_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+                render_pass.set_bind_group(2, &self.light_bind_group, &[]);
+                render_pass
+                    .set_index_buffer(parts.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.draw_indexed(0..parts.num_elements, 0, 0..1);
+            }
 
-            // バーバラのPMXモデル
+            // Barbara
             render_pass.set_pipeline(&self.pmx_barbara_model_render_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.light_bind_group, &[]);
-            let barbara_geometry_buffers = &self.pmx_barbara_model_geometry_buffers;
-            render_pass.set_vertex_buffer(0, barbara_geometry_buffers.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(0, self.pmx_barbara_model.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.pmx_barbara_model_transform_buffer.slice(..));
-            render_pass.set_index_buffer(
-                barbara_geometry_buffers.index_buffer.slice(..),
-                wgpu::IndexFormat::Uint16,
-            );
-            render_pass.draw_indexed(0..barbara_geometry_buffers.indices_count, 0, 0..1);
+            for parts in &self.pmx_barbara_model.parts {
+                render_pass.set_bind_group(0, &parts.texture_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+                render_pass.set_bind_group(2, &self.light_bind_group, &[]);
+                render_pass
+                    .set_index_buffer(parts.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.draw_indexed(0..parts.num_elements, 0, 0..1);
+            }
         }
 
         // 深度テクスチャRenderPass

@@ -1,6 +1,7 @@
 pub mod application;
 pub mod light;
-pub mod model;
+pub mod obj_model;
+pub mod pmx_model;
 pub mod renderer;
 pub mod shape_geometry;
 pub mod transform;
