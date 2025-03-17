@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use log::{error, info};
 use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalPosition;
 use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::Key::Named;

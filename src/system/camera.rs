@@ -1,9 +1,10 @@
+use cgmath::{EuclideanSpace, Point3};
 use winit::window::Window;
 
+use super::transform::Transform;
+
 pub struct Camera {
-    pub eye: cgmath::Point3<f32>,
-    pub target: cgmath::Point3<f32>,
-    pub up: cgmath::Vector3<f32>,
+    pub transform: Transform,
     pub aspect: f32,
     pub fovy: f32,
     pub znear: f32,
@@ -13,9 +14,7 @@ pub struct Camera {
 impl Camera {
     pub fn new(window: &Window) -> Self {
         Self {
-            eye: (0.0, 0.0, 2.0).into(),
-            target: (0.0, 0.0, 0.0).into(),
-            up: cgmath::Vector3::unit_y(),
+            transform: Transform::new(),
             aspect: window.inner_size().width as f32 / window.inner_size().height as f32,
             fovy: 45.0,
             znear: 0.1,
@@ -24,7 +23,13 @@ impl Camera {
     }
 
     fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
-        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
+        let eye = self.transform.get_position();
+        let forward = self.transform.get_forward();
+        let up = self.transform.get_up();
+
+        let target = Point3::from_vec(eye.to_vec() + forward);
+
+        let view = cgmath::Matrix4::look_at_rh(eye, target, up);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
 
         return OPENGL_TO_WGPU_MATRIX * proj * view;
@@ -56,7 +61,7 @@ impl CameraUniform {
     }
 
     pub fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_position = camera.eye.to_homogeneous().into();
+        self.view_position = camera.transform.get_position().to_homogeneous().into();
         self.view_proj = camera.build_view_projection_matrix().into();
     }
 }

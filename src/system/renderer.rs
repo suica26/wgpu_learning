@@ -829,7 +829,7 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn key_input(&mut self, key_event: &KeyEvent) {
-        self.camera_controller.process_events(key_event);
+        self.camera_controller.process_key_events(key_event);
     }
 
     pub fn update(&mut self) {
