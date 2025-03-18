@@ -357,8 +357,7 @@ impl<'a> Renderer<'a> {
         pmx_lumine_model
             .transform
             .set_position_x(-20.0)
-            .set_position_z(-40.0)
-            .set_rotation_y(std::f32::consts::PI);
+            .set_position_z(40.0);
         let pmx_lumine_model_transform_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("PMX Lumine Model Transform Buffer"),
@@ -382,8 +381,7 @@ impl<'a> Renderer<'a> {
         pmx_barbara_model
             .transform
             .set_position_x(20.0)
-            .set_position_z(-40.0)
-            .set_rotation_y(std::f32::consts::PI);
+            .set_position_z(40.0);
         let pmx_barbara_model_transform_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("PMX Barbara Model Transform Buffer"),
