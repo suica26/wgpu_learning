@@ -81,6 +81,13 @@ struct LightUniform {
     color: vec3<f32>,
 }
 
+struct PMXMaterialUniform {
+    diffuse: vec4<f32>,
+    specular: vec3<f32>,
+    specular_factor: f32,
+    ambient: vec3<f32>,
+}
+
 @group(0) @binding(0)
 var t_diffuse: texture_2d<f32>;
 @group(0) @binding(1)
@@ -89,23 +96,25 @@ var s_diffuse: sampler;
 @group(2) @binding(0)
 var<uniform> light: LightUniform;
 
+@group(3) @binding(0)
+var<uniform> material: PMXMaterialUniform;
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // let object_color = vec4<f32>(0.7, 0.2, 0.4, 1.0);
     let object_color = textureSample(t_diffuse, s_diffuse, in.tex_coords);
 
     let ambient_strength = 0.1;
-    let ambient_color = light.color * ambient_strength;
+    let ambient_color = ambient_strength * light.color;
 
     let light_dir = normalize(light.position - in.world_position);
     let view_dir = normalize(camera.view_pos.xyz - in.world_position);
     let half_dir = normalize(view_dir + light_dir);
 
     let diffuse_strength = max(dot(in.world_normal, light_dir), 0.0);
-    let diffuse_color = light.color * diffuse_strength;
+    let diffuse_color = material.diffuse.xyz * light.color * diffuse_strength;
 
     let specular_strength = pow(max(dot(view_dir, light_dir), 0.0), 32.0);
-    let specular_color = specular_strength * light.color;
+    let specular_color = material.specular * light.color * specular_strength * material.specular_factor;
 
     let result = (ambient_color + diffuse_color + specular_color) * object_color.xyz;
 

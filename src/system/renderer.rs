@@ -51,12 +51,10 @@ pub struct Renderer<'a> {
     obj_model_render_pipeline: wgpu::RenderPipeline,
 
     pmx_lumine_model: pmx_model::PMXModel,
-    pmx_lumine_model_transform: Transform,
     pmx_lumine_model_transform_buffer: wgpu::Buffer,
     pmx_lumine_model_render_pipeline: wgpu::RenderPipeline,
 
     pmx_barbara_model: pmx_model::PMXModel,
-    pmx_barbara_model_transform: Transform,
     pmx_barbara_model_transform_buffer: wgpu::Buffer,
     pmx_barbara_model_render_pipeline: wgpu::RenderPipeline,
 
@@ -343,7 +341,7 @@ impl<'a> Renderer<'a> {
                 ],
             });
 
-        let pmx_lumine_model = match resources::load_pmx_model(
+        let mut pmx_lumine_model = match resources::load_pmx_model(
             "lumine",
             "lumine.pmx",
             &device,
@@ -356,19 +354,19 @@ impl<'a> Renderer<'a> {
                 std::process::exit(1);
             }
         };
-        let mut pmx_lumine_model_transform = Transform::new();
-        pmx_lumine_model_transform
+        pmx_lumine_model
+            .transform
             .set_position_x(-20.0)
-            .set_position_z(40.0)
+            .set_position_z(-40.0)
             .set_rotation_y(std::f32::consts::PI);
         let pmx_lumine_model_transform_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("PMX Lumine Model Transform Buffer"),
-                contents: bytemuck::cast_slice(&[TransformRaw::from(&pmx_lumine_model_transform)]),
+                contents: bytemuck::cast_slice(&[TransformRaw::from(&pmx_lumine_model.transform)]),
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        let pmx_barbara_model = match resources::load_pmx_model(
+        let mut pmx_barbara_model = match resources::load_pmx_model(
             "barbara",
             "barbara.pmx",
             &device,
@@ -381,15 +379,15 @@ impl<'a> Renderer<'a> {
                 std::process::exit(1);
             }
         };
-        let mut pmx_barbara_model_transform = Transform::new();
-        pmx_barbara_model_transform
+        pmx_barbara_model
+            .transform
             .set_position_x(20.0)
-            .set_position_z(40.0)
+            .set_position_z(-40.0)
             .set_rotation_y(std::f32::consts::PI);
         let pmx_barbara_model_transform_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("PMX Barbara Model Transform Buffer"),
-                contents: bytemuck::cast_slice(&[TransformRaw::from(&pmx_barbara_model_transform)]),
+                contents: bytemuck::cast_slice(&[TransformRaw::from(&pmx_barbara_model.transform)]),
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
@@ -506,6 +504,7 @@ impl<'a> Renderer<'a> {
                 &pmx_model_texture_bind_group_layout,
                 &camera_bind_group_layout,
                 &light_bind_group_layout,
+                &pmx_lumine_model.material_bind_group_layout,
             ],
             Self::create_vertex_state(
                 &lumine_shader,
@@ -532,6 +531,7 @@ impl<'a> Renderer<'a> {
                 &pmx_model_texture_bind_group_layout,
                 &camera_bind_group_layout,
                 &light_bind_group_layout,
+                &pmx_barbara_model.material_bind_group_layout,
             ],
             Self::create_vertex_state(
                 &barbara_shader,
@@ -627,12 +627,10 @@ impl<'a> Renderer<'a> {
             obj_model_render_pipeline,
 
             pmx_lumine_model,
-            pmx_lumine_model_transform,
             pmx_lumine_model_transform_buffer,
             pmx_lumine_model_render_pipeline,
 
             pmx_barbara_model,
-            pmx_barbara_model_transform,
             pmx_barbara_model_transform_buffer,
             pmx_barbara_model_render_pipeline,
 
@@ -770,6 +768,7 @@ impl<'a> Renderer<'a> {
                 render_pass.set_bind_group(0, &parts.texture_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
                 render_pass.set_bind_group(2, &self.light_bind_group, &[]);
+                render_pass.set_bind_group(3, &parts.material_bind_group, &[]);
                 render_pass
                     .set_index_buffer(parts.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..parts.num_elements, 0, 0..1);
@@ -783,6 +782,7 @@ impl<'a> Renderer<'a> {
                 render_pass.set_bind_group(0, &parts.texture_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
                 render_pass.set_bind_group(2, &self.light_bind_group, &[]);
+                render_pass.set_bind_group(3, &parts.material_bind_group, &[]);
                 render_pass
                     .set_index_buffer(parts.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..parts.num_elements, 0, 0..1);

@@ -246,7 +246,7 @@ pub fn load_pmx_model(
     let textures = textures
         .iter()
         .map(|x| {
-            let path = format!("{}/{}", base_folder, x);
+            let path = format!("{}/{}", base_folder, x).replace("\\", "/");
             info!("Loading texture: {}", path);
 
             let texture = match load_texture(&path, false, device, queue) {
