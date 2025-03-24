@@ -1,10 +1,16 @@
-use std::io::{BufReader, Cursor};
+use std::{
+    io::{BufReader, Cursor},
+    rc::Rc,
+};
 
+use log::info;
+use std::result::Result::Ok;
 use wgpu::util::DeviceExt;
 
 use texture::Texture;
+use PMXUtil::reader::ModelInfoStage;
 
-use crate::system::{model, texture, vertex};
+use crate::system::{obj_model, pmx_model, texture, vertex};
 
 pub fn load_string(file_name: &str) -> anyhow::Result<String> {
     let path = std::path::Path::new(env!("OUT_DIR"))
@@ -30,12 +36,12 @@ pub fn load_texture(
     Texture::from_bytes(device, queue, &data, file_name, is_normal_map)
 }
 
-pub fn load_model(
+pub fn load_obj_model(
     file_name: &str,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,
-) -> anyhow::Result<model::Model> {
+) -> anyhow::Result<obj_model::ObjModel> {
     let obj_text = load_string(file_name)?;
     let obj_cursor = Cursor::new(obj_text);
     let mut obj_reader = BufReader::new(obj_cursor);
@@ -81,7 +87,7 @@ pub fn load_model(
             label: None,
         });
 
-        materials.push(model::Material {
+        materials.push(obj_model::ObjMaterial {
             name: m.name,
             diffuse_texture,
             normal_texture,
@@ -197,7 +203,7 @@ pub fn load_model(
                 usage: wgpu::BufferUsages::INDEX,
             });
 
-            model::Mesh {
+            obj_model::ObjMesh {
                 name: file_name.to_string(),
                 vertex_buffer,
                 index_buffer,
@@ -207,5 +213,69 @@ pub fn load_model(
         })
         .collect::<Vec<_>>();
 
-    Ok(model::Model { meshes, materials })
+    Ok(obj_model::ObjModel { meshes, materials })
+}
+
+pub fn load_pmx_model(
+    base_folder: &str,
+    file_name: &str,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture_bind_group_layout: &wgpu::BindGroupLayout,
+) -> anyhow::Result<pmx_model::PMXModel> {
+    let path = std::path::Path::new(env!("OUT_DIR"))
+        .join("res")
+        .join(format!("{}/{}", base_folder, file_name));
+    let loader = ModelInfoStage::open(path).unwrap();
+
+    let (model_info, ns) = loader.read();
+    let (vertices, ns) = ns.read();
+    let (faces, ns) = ns.read();
+    let (textures, ns) = ns.read();
+    let (materials, ns) = ns.read();
+    let (bones, ns) = ns.read();
+    let (morphs, ns) = ns.read();
+    let (frames, ns) = ns.read();
+    let (rigids, ns) = ns.read();
+    let (joints, ns) = ns.read();
+    let soft_bodies = match ns {
+        Some(ns) => ns.read(),
+        None => Vec::new(),
+    };
+
+    let textures = textures
+        .iter()
+        .map(|x| {
+            let path = format!("{}/{}", base_folder, x).replace("\\", "/");
+            info!("Loading texture: {}", path);
+
+            let texture = match load_texture(&path, false, device, queue) {
+                Ok(t) => t,
+                Err(_) => {
+                    info!("Failed to load texture: {}", path);
+                    texture::Texture::create_dummy(device, queue)
+                }
+            };
+
+            Rc::new(texture)
+        })
+        .collect::<Vec<_>>();
+
+    let loaded_model = pmx_model::LoadedPMXModel {
+        model_info,
+        vertices,
+        faces,
+        textures,
+        materials,
+        bones,
+        morphs,
+        frames,
+        rigids,
+        joints,
+        soft_bodies,
+    };
+
+    let model = pmx_model::PMXModel::new(device, texture_bind_group_layout, loaded_model);
+
+    Ok(model)
 }

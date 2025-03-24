@@ -1,73 +1,129 @@
+use cgmath::Vector3;
 use winit::event::{ElementState, KeyEvent};
 use winit::keyboard;
 
+use crate::system::application_time::ApplicationTime;
 use crate::system::camera::Camera;
 
 pub struct CameraController {
     pub speed: f32,
+    pub rotation_speed: f32,
     pub is_forward_pressed: bool,
     pub is_backward_pressed: bool,
     pub is_left_pressed: bool,
     pub is_right_pressed: bool,
+    pub is_up_pressed: bool,
+    pub is_down_pressed: bool,
+    pub is_right_rotate_pressed: bool,
+    pub is_left_rotate_pressed: bool,
+    pub is_up_rotate_pressed: bool,
+    pub is_down_rotate_pressed: bool,
 }
 
 impl CameraController {
-    pub fn new(speed: f32) -> Self {
+    pub fn new(speed: f32, rotation_speed: f32) -> Self {
         Self {
             speed,
+            rotation_speed,
             is_forward_pressed: false,
             is_backward_pressed: false,
             is_left_pressed: false,
             is_right_pressed: false,
+            is_up_pressed: false,
+            is_down_pressed: false,
+            is_right_rotate_pressed: false,
+            is_left_rotate_pressed: false,
+            is_up_rotate_pressed: false,
+            is_down_rotate_pressed: false,
         }
     }
 
-    pub fn process_events(&mut self, key_event: &KeyEvent) {
+    pub fn process_key_events(&mut self, key_event: &KeyEvent) {
         use keyboard::{KeyCode, PhysicalKey};
 
         let is_pressed = key_event.state == ElementState::Pressed;
 
         match key_event.physical_key {
-            PhysicalKey::Code(KeyCode::KeyW) | PhysicalKey::Code(KeyCode::ArrowUp) => {
+            PhysicalKey::Code(KeyCode::KeyW) => {
                 self.is_forward_pressed = is_pressed;
             }
-            PhysicalKey::Code(KeyCode::KeyS) | PhysicalKey::Code(KeyCode::ArrowDown) => {
+            PhysicalKey::Code(KeyCode::KeyS) => {
                 self.is_backward_pressed = is_pressed;
             }
-            PhysicalKey::Code(KeyCode::KeyA) | PhysicalKey::Code(KeyCode::ArrowLeft) => {
+            PhysicalKey::Code(KeyCode::KeyA) => {
                 self.is_left_pressed = is_pressed;
             }
-            PhysicalKey::Code(KeyCode::KeyD) | PhysicalKey::Code(KeyCode::ArrowRight) => {
+            PhysicalKey::Code(KeyCode::KeyD) => {
                 self.is_right_pressed = is_pressed;
+            }
+            PhysicalKey::Code(KeyCode::Space) => {
+                self.is_up_pressed = is_pressed;
+            }
+            PhysicalKey::Code(KeyCode::ShiftLeft) => {
+                self.is_down_pressed = is_pressed;
+            }
+            PhysicalKey::Code(KeyCode::KeyE) => {
+                self.is_right_rotate_pressed = is_pressed;
+            }
+            PhysicalKey::Code(KeyCode::KeyQ) => {
+                self.is_left_rotate_pressed = is_pressed;
+            }
+            PhysicalKey::Code(KeyCode::KeyR) => {
+                self.is_up_rotate_pressed = is_pressed;
+            }
+            PhysicalKey::Code(KeyCode::KeyF) => {
+                self.is_down_rotate_pressed = is_pressed;
             }
             _ => (),
         }
     }
 
     pub fn update_camera(&self, camera: &mut Camera) {
-        use cgmath::InnerSpace;
+        let delta_time = ApplicationTime::get_instance().delta_time;
+        let speed = self.speed * delta_time;
+        let rotation_speed = self.rotation_speed * delta_time;
 
-        let forward = camera.target - camera.eye;
-        let forward_norm = forward.normalize();
-        let forward_mag = forward.magnitude();
-
-        if self.is_forward_pressed && forward_mag > self.speed {
-            camera.eye += forward_norm * self.speed;
+        let up = Vector3::unit_y();
+        let left = camera.transform.get_left();
+        let forward = left.cross(up);
+        if self.is_forward_pressed {
+            camera.transform.add_position(forward * speed);
         }
         if self.is_backward_pressed {
-            camera.eye -= forward_norm * self.speed;
+            camera.transform.add_position(-forward * speed);
         }
 
-        let right = forward_norm.cross(camera.up);
-
-        let forward = camera.target - camera.eye;
-        let forward_mag = forward.magnitude();
-
-        if self.is_right_pressed {
-            camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
-        }
         if self.is_left_pressed {
-            camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
+            camera.transform.add_position(left * speed);
+        }
+        if self.is_right_pressed {
+            camera.transform.add_position(-left * speed);
+        }
+
+        if self.is_up_pressed {
+            camera.transform.add_position(up * speed);
+        }
+        if self.is_down_pressed {
+            camera.transform.add_position(-up * speed);
+        }
+
+        if self.is_left_rotate_pressed {
+            camera.transform.add_rotation_y(rotation_speed);
+        }
+        if self.is_right_rotate_pressed {
+            camera.transform.add_rotation_y(-rotation_speed);
+        }
+
+        const MAX_PITCH: f32 = 80.0 * std::f32::consts::PI / 180.0;
+        if self.is_up_rotate_pressed {
+            let current_up = camera.transform.get_rotation().x;
+            let new_up = (current_up.0 - rotation_speed).max(-MAX_PITCH);
+            camera.transform.set_rotation_x(new_up);
+        }
+        if self.is_down_rotate_pressed {
+            let current_up = camera.transform.get_rotation().x;
+            let new_up = (current_up.0 + rotation_speed).min(MAX_PITCH);
+            camera.transform.set_rotation_x(new_up);
         }
     }
 }

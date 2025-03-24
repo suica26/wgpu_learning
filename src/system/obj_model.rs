@@ -1,22 +1,20 @@
 use std::ops::Range;
 
-use wgpu::core::device;
-
 use crate::system::texture;
 
-pub struct Model {
-    pub meshes: Vec<Mesh>,
-    pub materials: Vec<Material>,
+pub struct ObjModel {
+    pub meshes: Vec<ObjMesh>,
+    pub materials: Vec<ObjMaterial>,
 }
 
-pub struct Material {
+pub struct ObjMaterial {
     pub name: String,
     pub diffuse_texture: texture::Texture,
     pub normal_texture: texture::Texture,
     pub bind_group: wgpu::BindGroup,
 }
 
-pub struct Mesh {
+pub struct ObjMesh {
     pub name: String,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
@@ -27,16 +25,16 @@ pub struct Mesh {
 pub trait DrawModel<'a> {
     fn draw_mesh(
         &mut self,
-        mesh: &'a Mesh,
-        material: &'a Material,
+        mesh: &'a ObjMesh,
+        material: &'a ObjMaterial,
         camera_bind_group: &'a wgpu::BindGroup,
         light_bind_group: &'a wgpu::BindGroup,
     );
 
     fn draw_mesh_instanced(
         &mut self,
-        mesh: &'a Mesh,
-        material: &'a Material,
+        mesh: &'a ObjMesh,
+        material: &'a ObjMaterial,
         instances: Range<u32>,
         camera_bind_group: &'a wgpu::BindGroup,
         light_bind_group: &'a wgpu::BindGroup,
@@ -44,14 +42,14 @@ pub trait DrawModel<'a> {
 
     fn draw_model(
         &mut self,
-        model: &'a Model,
+        model: &'a ObjModel,
         camera_bind_group: &'a wgpu::BindGroup,
         light_bind_group: &'a wgpu::BindGroup,
     );
 
     fn draw_model_instanced(
         &mut self,
-        model: &'a Model,
+        model: &'a ObjModel,
         instances: Range<u32>,
         camera_bind_group: &'a wgpu::BindGroup,
         light_bind_group: &'a wgpu::BindGroup,
@@ -64,8 +62,8 @@ where
 {
     fn draw_mesh(
         &mut self,
-        mesh: &'a Mesh,
-        material: &'a Material,
+        mesh: &'a ObjMesh,
+        material: &'a ObjMaterial,
         camera_bind_group: &'a wgpu::BindGroup,
         light_bind_group: &'b wgpu::BindGroup,
     ) {
@@ -74,8 +72,8 @@ where
 
     fn draw_mesh_instanced(
         &mut self,
-        mesh: &'b Mesh,
-        material: &'b Material,
+        mesh: &'b ObjMesh,
+        material: &'b ObjMaterial,
         instances: Range<u32>,
         camera_bind_group: &'b wgpu::BindGroup,
         light_bind_group: &'b wgpu::BindGroup,
@@ -92,7 +90,7 @@ where
 
     fn draw_model(
         &mut self,
-        model: &'b Model,
+        model: &'b ObjModel,
         camera_bind_group: &'b wgpu::BindGroup,
         light_bind_group: &'b wgpu::BindGroup,
     ) {
@@ -101,7 +99,7 @@ where
 
     fn draw_model_instanced(
         &mut self,
-        model: &'b Model,
+        model: &'b ObjModel,
         instances: Range<u32>,
         camera_bind_group: &'b wgpu::BindGroup,
         light_bind_group: &'b wgpu::BindGroup,
@@ -122,14 +120,14 @@ where
 pub trait DrawLight<'a> {
     fn draw_light_mesh(
         &mut self,
-        mesh: &'a Mesh,
+        mesh: &'a ObjMesh,
         camera_bind_group: &'a wgpu::BindGroup,
         light_bind_group: &'a wgpu::BindGroup,
     );
 
     fn draw_light_mesh_instanced(
         &mut self,
-        mesh: &'a Mesh,
+        mesh: &'a ObjMesh,
         instances: Range<u32>,
         camera_bind_group: &'a wgpu::BindGroup,
         light_bind_group: &'a wgpu::BindGroup,
@@ -137,14 +135,14 @@ pub trait DrawLight<'a> {
 
     fn draw_light_model(
         &mut self,
-        model: &'a Model,
+        model: &'a ObjModel,
         camera_bind_group: &'a wgpu::BindGroup,
         light_bind_group: &'a wgpu::BindGroup,
     );
 
     fn draw_light_model_instanced(
         &mut self,
-        model: &'a Model,
+        model: &'a ObjModel,
         instances: Range<u32>,
         camera_bind_group: &'a wgpu::BindGroup,
         light_bind_group: &'a wgpu::BindGroup,
@@ -152,8 +150,8 @@ pub trait DrawLight<'a> {
 
     fn draw_model_instanced_with_material(
         &mut self,
-        model: &'a Model,
-        material: &'a Material,
+        model: &'a ObjModel,
+        material: &'a ObjMaterial,
         instances: Range<u32>,
         camera_bind_group: &'a wgpu::BindGroup,
         light_bind_group: &'a wgpu::BindGroup,
@@ -166,7 +164,7 @@ where
 {
     fn draw_light_mesh(
         &mut self,
-        mesh: &'b Mesh,
+        mesh: &'b ObjMesh,
         camera_bind_group: &'b wgpu::BindGroup,
         light_bind_group: &'b wgpu::BindGroup,
     ) {
@@ -175,7 +173,7 @@ where
 
     fn draw_light_mesh_instanced(
         &mut self,
-        mesh: &'b Mesh,
+        mesh: &'b ObjMesh,
         instances: Range<u32>,
         camera_bind_group: &'b wgpu::BindGroup,
         light_bind_group: &'b wgpu::BindGroup,
@@ -189,7 +187,7 @@ where
 
     fn draw_light_model(
         &mut self,
-        model: &'b Model,
+        model: &'b ObjModel,
         camera_bind_group: &'b wgpu::BindGroup,
         light_bind_group: &'b wgpu::BindGroup,
     ) {
@@ -198,7 +196,7 @@ where
 
     fn draw_light_model_instanced(
         &mut self,
-        model: &'b Model,
+        model: &'b ObjModel,
         instances: Range<u32>,
         camera_bind_group: &'b wgpu::BindGroup,
         light_bind_group: &'b wgpu::BindGroup,
@@ -215,8 +213,8 @@ where
 
     fn draw_model_instanced_with_material(
         &mut self,
-        model: &'b Model,
-        material: &'b Material,
+        model: &'b ObjModel,
+        material: &'b ObjMaterial,
         instances: Range<u32>,
         camera_bind_group: &'b wgpu::BindGroup,
         light_bind_group: &'b wgpu::BindGroup,
@@ -233,7 +231,7 @@ where
     }
 }
 
-impl Material {
+impl ObjMaterial {
     pub fn new(
         device: &wgpu::Device,
         name: &str,

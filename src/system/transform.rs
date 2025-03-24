@@ -24,13 +24,36 @@ impl Transform {
         self.angle
     }
 
+    pub fn get_rotation_quaternion(&self) -> Quaternion<f32> {
+        Quaternion::from(self.angle)
+    }
+
+    pub fn get_rotation_matrix(&self) -> Matrix4<f32> {
+        Matrix4::from(Quaternion::from(self.angle))
+    }
+
+    pub(crate) fn get_forward(&self) -> Vector3<f32> {
+        let forward = self.get_rotation_matrix() * Vector3::unit_z().extend(0.0);
+        Vector3::new(forward.x, forward.y, forward.z)
+    }
+
+    pub(crate) fn get_left(&self) -> Vector3<f32> {
+        let left = self.get_rotation_matrix() * Vector3::unit_x().extend(0.0);
+        Vector3::new(left.x, left.y, left.z)
+    }
+
+    pub(crate) fn get_up(&self) -> Vector3<f32> {
+        let up = self.get_rotation_matrix() * Vector3::unit_y().extend(0.0);
+        Vector3::new(up.x, up.y, up.z)
+    }
+
     pub fn get_scale(&self) -> Vector3<f32> {
         self.scale
     }
 
     pub fn get_matrix(&self) -> Matrix4<f32> {
         let translation = Matrix4::from_translation(self.position.to_vec());
-        let rotation = Matrix4::from(Quaternion::from(self.angle));
+        let rotation = self.get_rotation_matrix();
         let scale = Matrix4::from_nonuniform_scale(self.scale.x, self.scale.y, self.scale.z);
 
         translation * rotation * scale

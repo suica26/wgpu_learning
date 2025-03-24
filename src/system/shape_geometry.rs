@@ -15,8 +15,9 @@ pub struct ShapeGeometry {
     pub indices_count: usize,
 }
 
-impl ShapeGeometry {
-    pub fn from(vertices: Vec<ModelVertex>, indices: Vec<u16>) -> Self {
+impl From<(Vec<ModelVertex>, Vec<u16>)> for ShapeGeometry {
+    fn from(value: (Vec<ModelVertex>, Vec<u16>)) -> Self {
+        let (vertices, indices) = value;
         let indices_count = indices.len();
         Self {
             vertices,
@@ -60,20 +61,25 @@ pub struct ShapeGeometryFactory {
 
 impl ShapeGeometryFactory {
     pub fn new() -> Self {
-        Self { geometries: HashMap::new() }
+        Self {
+            geometries: HashMap::new(),
+        }
     }
 
-    pub fn create_geometry(&mut self, device: &wgpu::Device, shape_type: ShapeType) -> &ShapeGeometryBuffers {
-        self.geometries.entry(shape_type)
-            .or_insert_with_key(|st| {
-                let geometry = match st {
-                    ShapeType::Sphere(div) => sphere::create_sphere_geometry(*div),
-                    ShapeType::Square => square::create_square_geometry(),
-                    _ => panic!("Unsupported shape type: {:?}", st),
-                };
+    pub fn create_geometry(
+        &mut self,
+        device: &wgpu::Device,
+        shape_type: ShapeType,
+    ) -> &ShapeGeometryBuffers {
+        self.geometries.entry(shape_type).or_insert_with_key(|st| {
+            let geometry = match st {
+                ShapeType::Sphere(div) => sphere::create_sphere_geometry(*div),
+                ShapeType::Square => square::create_square_geometry(),
+                _ => panic!("Unsupported shape type: {:?}", st),
+            };
 
-                ShapeGeometryBuffers::from((device, geometry))
-            })
+            ShapeGeometryBuffers::from((device, geometry))
+        })
     }
 
     pub fn get_geometry(&self, shape_type: &ShapeType) -> Option<&ShapeGeometryBuffers> {

@@ -14,7 +14,7 @@ pub fn create_sphere_geometry(div: u16) -> ShapeGeometry {
         create_by_indivisible(div)
     };
 
-    ShapeGeometry::from(vertices, indices)
+    ShapeGeometry::from((vertices, indices))
 }
 
 /// divが奇数の場合の球体の生成
