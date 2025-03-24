@@ -2,6 +2,7 @@ use cgmath::Vector3;
 use winit::event::{ElementState, KeyEvent};
 use winit::keyboard;
 
+use crate::system::application_time::ApplicationTime;
 use crate::system::camera::Camera;
 
 pub struct CameraController {
@@ -20,10 +21,10 @@ pub struct CameraController {
 }
 
 impl CameraController {
-    pub fn new(speed: f32) -> Self {
+    pub fn new(speed: f32, rotation_speed: f32) -> Self {
         Self {
             speed,
-            rotation_speed: 0.01,
+            rotation_speed,
             is_forward_pressed: false,
             is_backward_pressed: false,
             is_left_pressed: false,
@@ -78,46 +79,50 @@ impl CameraController {
     }
 
     pub fn update_camera(&self, camera: &mut Camera) {
+        let delta_time = ApplicationTime::get_instance().delta_time;
+        let speed = self.speed * delta_time;
+        let rotation_speed = self.rotation_speed * delta_time;
+
         let up = Vector3::unit_y();
         let left = camera.transform.get_left();
         let forward = left.cross(up);
         if self.is_forward_pressed {
-            camera.transform.add_position(forward * self.speed);
+            camera.transform.add_position(forward * speed);
         }
         if self.is_backward_pressed {
-            camera.transform.add_position(-forward * self.speed);
+            camera.transform.add_position(-forward * speed);
         }
 
         if self.is_left_pressed {
-            camera.transform.add_position(left * self.speed);
+            camera.transform.add_position(left * speed);
         }
         if self.is_right_pressed {
-            camera.transform.add_position(-left * self.speed);
+            camera.transform.add_position(-left * speed);
         }
 
         if self.is_up_pressed {
-            camera.transform.add_position(up * self.speed);
+            camera.transform.add_position(up * speed);
         }
         if self.is_down_pressed {
-            camera.transform.add_position(-up * self.speed);
+            camera.transform.add_position(-up * speed);
         }
 
         if self.is_left_rotate_pressed {
-            camera.transform.add_rotation_y(self.rotation_speed);
+            camera.transform.add_rotation_y(rotation_speed);
         }
         if self.is_right_rotate_pressed {
-            camera.transform.add_rotation_y(-self.rotation_speed);
+            camera.transform.add_rotation_y(-rotation_speed);
         }
 
         const MAX_PITCH: f32 = 80.0 * std::f32::consts::PI / 180.0;
         if self.is_up_rotate_pressed {
             let current_up = camera.transform.get_rotation().x;
-            let new_up = (current_up.0 - self.rotation_speed).max(-MAX_PITCH);
+            let new_up = (current_up.0 - rotation_speed).max(-MAX_PITCH);
             camera.transform.set_rotation_x(new_up);
         }
         if self.is_down_rotate_pressed {
             let current_up = camera.transform.get_rotation().x;
-            let new_up = (current_up.0 + self.rotation_speed).min(MAX_PITCH);
+            let new_up = (current_up.0 + rotation_speed).min(MAX_PITCH);
             camera.transform.set_rotation_x(new_up);
         }
     }

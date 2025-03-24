@@ -15,6 +15,7 @@ use crate::system::shapes::{ShapeType, Square};
 use crate::system::transform::{Transform, TransformRaw};
 use crate::system::{light, obj_model, resources, texture, vertex};
 
+use super::application_time::ApplicationTime;
 use super::obj_model::DrawLight;
 use super::pmx_model;
 
@@ -64,8 +65,6 @@ pub struct Renderer<'a> {
     depth_bind_group_layout: wgpu::BindGroupLayout,
     depth_bind_group: wgpu::BindGroup,
     depth_render_pipeline: wgpu::RenderPipeline,
-
-    instant_time: std::time::Instant,
 }
 
 pub const SPHERE: ShapeType = ShapeType::Sphere(16);
@@ -112,7 +111,7 @@ impl<'a> Renderer<'a> {
         surface.configure(&device, &surface_config);
 
         let camera = Camera::new(&window);
-        let camera_controller = CameraController::new(0.1);
+        let camera_controller = CameraController::new(10., 2.);
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
@@ -638,8 +637,6 @@ impl<'a> Renderer<'a> {
             depth_bind_group_layout,
             depth_bind_group,
             depth_render_pipeline,
-
-            instant_time: std::time::Instant::now(),
         }
     }
 
@@ -840,7 +837,10 @@ impl<'a> Renderer<'a> {
                 * old_position)
                 .into();
 
-        let time = self.instant_time.elapsed().as_secs_f32();
+        let time = ApplicationTime::get_instance()
+            .startup_time
+            .elapsed()
+            .as_secs_f32();
 
         for (index, sphere) in &mut self.spheres.iter_mut().enumerate() {
             sphere

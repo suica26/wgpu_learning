@@ -3,14 +3,15 @@ use std::sync::Arc;
 
 use log::{error, info};
 use winit::application::ApplicationHandler;
-use winit::dpi::PhysicalPosition;
 use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::Key::Named;
-use winit::keyboard::NamedKey::Escape;
+use winit::keyboard::NamedKey::{Enter, Escape};
 use winit::window::{Window, WindowButtons, WindowId};
 
 use crate::system::renderer::Renderer;
+
+use super::application_time::ApplicationTime;
 
 pub struct Application<'a> {
     pub window: Option<Arc<Window>>,
@@ -32,6 +33,14 @@ impl Application<'_> {
 
         env::set_var("RUST_LOG", "info");
         env_logger::init();
+
+        match ApplicationTime::init() {
+            Ok(_) => info!("Application time initialized"),
+            Err(_) => {
+                error!("Failed to initialize ApplicationTime");
+                process::exit(1);
+            }
+        };
 
         let event_loop = EventLoop::new().unwrap();
         event_loop.set_control_flow(ControlFlow::Poll);
@@ -57,6 +66,13 @@ impl<'a> Application<'a> {
         if event.logical_key == Named(Escape) {
             println!("The escape key was pressed; stopping");
             process::exit(0);
+        }
+
+        if event.logical_key == Named(Enter) {
+            info!(
+                "Current frame rate: {}",
+                ApplicationTime::get_instance().current_frame_rate
+            );
         }
 
         self.renderer.as_mut().unwrap().key_input(&event);
@@ -88,6 +104,7 @@ impl<'a> Application<'a> {
 
     /// 更新処理
     fn update(&mut self) {
+        ApplicationTime::update();
         self.renderer.as_mut().unwrap().update();
     }
 }
