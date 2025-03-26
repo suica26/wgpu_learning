@@ -16,6 +16,8 @@ use super::application_time::ApplicationTime;
 pub struct Application<'a> {
     pub window: Option<Arc<Window>>,
     pub renderer: Option<Renderer<'a>>,
+    frame_rates: Vec<u32>,
+    last_title_update_time: std::time::Instant,
 }
 
 /// public実装
@@ -24,6 +26,8 @@ impl Application<'_> {
         Self {
             window: None,
             renderer: None,
+            frame_rates: Vec::new(),
+            last_title_update_time: std::time::Instant::now(),
         }
     }
 
@@ -68,13 +72,6 @@ impl<'a> Application<'a> {
             process::exit(0);
         }
 
-        if event.logical_key == Named(Enter) {
-            info!(
-                "Current frame rate: {}",
-                ApplicationTime::get_instance().current_frame_rate
-            );
-        }
-
         self.renderer.as_mut().unwrap().key_input(&event);
     }
 
@@ -105,6 +102,25 @@ impl<'a> Application<'a> {
     /// 更新処理
     fn update(&mut self) {
         ApplicationTime::update();
+        self.frame_rates
+            .push(ApplicationTime::get_instance().current_frame_rate);
+        // 1秒ごとにタイトルを更新
+        {
+            let application_time_instance = ApplicationTime::get_instance();
+            if application_time_instance
+                .last_frame_time
+                .duration_since(self.last_title_update_time)
+                > std::time::Duration::from_secs(1)
+            {
+                self.window.as_mut().unwrap().set_title(&format!(
+                    "wgpu learning - {:?} FPS",
+                    self.frame_rates.iter().sum::<u32>() / self.frame_rates.len() as u32
+                ));
+                self.frame_rates.clear();
+                self.last_title_update_time = application_time_instance.last_frame_time;
+            }
+        }
+
         self.renderer.as_mut().unwrap().update();
     }
 }
