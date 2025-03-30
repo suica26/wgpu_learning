@@ -1,3 +1,4 @@
+use std::char::from_u32;
 use std::sync::Arc;
 
 use cgmath::Rotation3;
@@ -16,8 +17,9 @@ use crate::system::transform::{Transform, TransformRaw};
 use crate::system::{light, obj_model, resources, texture, vertex};
 
 use super::application_time::ApplicationTime;
+use super::camera::Projection;
 use super::obj_model::DrawLight;
-use super::pmx_model;
+use super::{hdr, pmx_model};
 
 /// 描画を行う構造体
 pub struct Renderer<'a> {
@@ -28,11 +30,16 @@ pub struct Renderer<'a> {
     pub surface_format: wgpu::TextureFormat,
     pub surface_config: wgpu::SurfaceConfiguration,
 
+    proj: Projection,
     camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     camera_controller: CameraController,
+
+    hdr: hdr::HdrPipeline,
+    environment_bind_group: wgpu::BindGroup,
+    sky_pipeline: wgpu::RenderPipeline,
 
     light_uniform: light::LightUniform,
     light_buffer: wgpu::Buffer,
@@ -59,8 +66,6 @@ pub struct Renderer<'a> {
     pmx_barbara_model_transform_buffer: wgpu::Buffer,
     pmx_barbara_model_render_pipeline: wgpu::RenderPipeline,
 
-    plane: Square,
-    plane_transform_buffer: wgpu::Buffer,
     depth_texture: texture::Texture,
     depth_bind_group_layout: wgpu::BindGroupLayout,
     depth_bind_group: wgpu::BindGroup,
@@ -93,8 +98,7 @@ impl<'a> Renderer<'a> {
             .formats
             .iter()
             .copied()
-            .filter(|f| f.is_srgb())
-            .next()
+            .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
 
         let surface_config = wgpu::SurfaceConfiguration {
@@ -103,18 +107,26 @@ impl<'a> Renderer<'a> {
             width: window.inner_size().width,
             height: window.inner_size().height,
             present_mode: wgpu::PresentMode::Immediate,
-            view_formats: Vec::new(),
             alpha_mode: surface_caps.alpha_modes[0],
+            view_formats: vec![surface_format.add_srgb_suffix()],
             desired_maximum_frame_latency: 2,
         };
 
         surface.configure(&device, &surface_config);
 
-        let camera = Camera::new(&window);
+        let proj = Projection::new(
+            window.inner_size().width,
+            window.inner_size().height,
+            cgmath::Deg(45.0),
+            0.1,
+            100.0,
+        );
+
+        let camera = Camera::new();
         let camera_controller = CameraController::new(10., 2.);
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
+        camera_uniform.update_view_proj(&camera, &proj);
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -388,22 +400,6 @@ impl<'a> Renderer<'a> {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        let mut plane = Square::new();
-        plane
-            .transform
-            .set_position_y(30.0)
-            .set_position_z(10.0)
-            .set_scale(50.0);
-
-        let transform_data = vec![TransformRaw::from(&plane.transform)];
-        let plane_transform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Plane Transform Buffer"),
-            contents: bytemuck::cast_slice(&transform_data),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        shape_factory.create_geometry(&device, ShapeType::Square);
-
         let depth_texture =
             texture::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
         let depth_bind_group_layout =
@@ -444,6 +440,71 @@ impl<'a> Renderer<'a> {
             ],
         });
 
+        let hdr_loader = resources::HdrLoader::new(&device);
+        let sky_bytes = resources::load_binary("pure-sky.hdr").unwrap();
+        let sky_texture = hdr_loader
+            .from_equirectangular_bytes(&device, &queue, &sky_bytes, 1080, Some("Sky Texture"))
+            .unwrap();
+
+        let hdr = hdr::HdrPipeline::new(&device, &surface_config);
+
+        let environment_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("environment_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::Cube,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let environment_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("environment_bind_group"),
+            layout: &environment_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&sky_texture.view()),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sky_texture.sampler()),
+                },
+            ],
+        });
+
+        let sky_shader =
+            device.create_shader_module(wgpu::include_wgsl!("../../res/shader/sky.wgsl"));
+        let sky_pipeline = Self::create_render_pipeline(
+            "Sky Pipeline Layout",
+            &device,
+            &[&camera_bind_group_layout, &environment_layout],
+            Self::create_vertex_state(&sky_shader, &[]),
+            Self::create_fragment_state(
+                &sky_shader,
+                &[Some(wgpu::ColorTargetState {
+                    format: hdr.format(),
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            ),
+            Self::create_primitive_state(),
+            Self::create_depth_stencil_state(texture::Texture::DEPTH_FORMAT),
+        );
+
         let sphere_shader =
             device.create_shader_module(wgpu::include_wgsl!("../../res/shader/sphere.wgsl"));
         let sphere_render_pipeline = Self::create_render_pipeline(
@@ -457,7 +518,7 @@ impl<'a> Renderer<'a> {
             Self::create_fragment_state(
                 &sphere_shader,
                 &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
+                    format: hdr.format(),
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -475,6 +536,7 @@ impl<'a> Renderer<'a> {
                 &texture_bind_group_layout,
                 &camera_bind_group_layout,
                 &light_bind_group_layout,
+                &environment_layout,
             ],
             Self::create_vertex_state(
                 &obj_model_shader,
@@ -483,7 +545,7 @@ impl<'a> Renderer<'a> {
             Self::create_fragment_state(
                 &obj_model_shader,
                 &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
+                    format: hdr.format(),
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -510,7 +572,7 @@ impl<'a> Renderer<'a> {
             Self::create_fragment_state(
                 &lumine_shader,
                 &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
+                    format: hdr.format(),
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -537,7 +599,7 @@ impl<'a> Renderer<'a> {
             Self::create_fragment_state(
                 &barbara_shader,
                 &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
+                    format: hdr.format(),
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -556,7 +618,7 @@ impl<'a> Renderer<'a> {
             Self::create_fragment_state(
                 &light_shader,
                 &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
+                    format: hdr.format(),
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent::REPLACE,
                         alpha: wgpu::BlendComponent::REPLACE,
@@ -601,11 +663,16 @@ impl<'a> Renderer<'a> {
             surface_format,
             surface_config,
 
+            proj,
             camera,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
             camera_controller,
+
+            hdr,
+            environment_bind_group,
+            sky_pipeline,
 
             light_uniform,
             light_buffer,
@@ -631,8 +698,6 @@ impl<'a> Renderer<'a> {
             pmx_barbara_model_transform_buffer,
             pmx_barbara_model_render_pipeline,
 
-            plane,
-            plane_transform_buffer,
             depth_texture,
             depth_bind_group_layout,
             depth_bind_group,
@@ -655,6 +720,10 @@ impl<'a> Renderer<'a> {
             },
         );
 
+        if width > 0 && height > 0 {
+            self.hdr.resize(&self.device, width, height);
+        }
+
         self.depth_texture = texture::Texture::create_depth_texture(
             &self.device,
             &self.surface_config,
@@ -675,14 +744,15 @@ impl<'a> Renderer<'a> {
             ],
         });
 
-        self.camera.aspect = self.surface_config.width as f32 / self.surface_config.height as f32;
+        self.proj.resize(width, height);
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.surface_config.format.add_srgb_suffix()),
+            ..Default::default()
+        });
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -694,7 +764,7 @@ impl<'a> Renderer<'a> {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &self.hdr.view(),
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -717,6 +787,12 @@ impl<'a> Renderer<'a> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
+            // Sky
+            render_pass.set_pipeline(&self.sky_pipeline);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.environment_bind_group, &[]);
+            render_pass.draw(0..3, 0..1);
 
             // ライト
             render_pass.set_pipeline(&self.light_render_pipeline);
@@ -752,6 +828,7 @@ impl<'a> Renderer<'a> {
                 0..self.obj_model_transforms.len() as u32,
                 &self.camera_bind_group,
                 &self.light_bind_group,
+                &self.environment_bind_group,
             );
 
             // PMX Model Rendering
@@ -784,6 +861,8 @@ impl<'a> Renderer<'a> {
             }
         }
 
+        self.hdr.process(&mut encoder, &view);
+
         // 深度テクスチャRenderPass
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -804,17 +883,6 @@ impl<'a> Renderer<'a> {
             render_pass.set_pipeline(&self.depth_render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.depth_bind_group, &[]);
-
-            let plane_geometry_buffers =
-                self.shape_factory.get_geometry(&ShapeType::Square).unwrap();
-
-            render_pass.set_vertex_buffer(0, plane_geometry_buffers.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.plane_transform_buffer.slice(..));
-            render_pass.set_index_buffer(
-                plane_geometry_buffers.index_buffer.slice(..),
-                wgpu::IndexFormat::Uint16,
-            );
-            render_pass.draw_indexed(0..plane_geometry_buffers.indices_count, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -829,7 +897,8 @@ impl<'a> Renderer<'a> {
 
     pub fn update(&mut self) {
         self.camera_controller.update_camera(&mut self.camera);
-        self.camera_uniform.update_view_proj(&self.camera);
+        self.camera_uniform
+            .update_view_proj(&self.camera, &self.proj);
 
         let old_position: cgmath::Vector3<f32> = self.light_uniform.position.into();
         self.light_uniform.position =
@@ -883,50 +952,8 @@ impl<'a> Renderer<'a> {
             bytemuck::cast_slice(&[self.light_uniform]),
         );
     }
-}
 
-/// private impl
-impl Renderer<'_> {
-    fn create_adapter(instance: &wgpu::Instance, surface: &wgpu::Surface) -> wgpu::Adapter {
-        let request = instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        });
-
-        match block_on(request) {
-            Some(adapter) => {
-                info!("Adapter: {:?}", adapter.get_info());
-                adapter
-            }
-            None => {
-                error!("Failed to find a suitable adapter");
-                std::process::exit(1);
-            }
-        }
-    }
-
-    fn create_device_and_queue(adapter: &wgpu::Adapter) -> (wgpu::Device, wgpu::Queue) {
-        let request = adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                memory_hints: wgpu::MemoryHints::default(),
-            },
-            None,
-        );
-
-        match block_on(request) {
-            Ok(n) => n,
-            Err(e) => {
-                error!("Failed to create device and queue: {:?}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
-    fn create_render_pipeline(
+    pub fn create_render_pipeline(
         label: &str,
         device: &wgpu::Device,
         bind_group_layouts: &[&wgpu::BindGroupLayout],
@@ -961,10 +988,10 @@ impl Renderer<'_> {
         })
     }
 
-    fn create_vertex_state<'a>(
-        shader: &'a wgpu::ShaderModule,
-        buffers: &'a [wgpu::VertexBufferLayout],
-    ) -> wgpu::VertexState<'a> {
+    pub fn create_vertex_state<'b>(
+        shader: &'b wgpu::ShaderModule,
+        buffers: &'b [wgpu::VertexBufferLayout],
+    ) -> wgpu::VertexState<'b> {
         wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
@@ -973,10 +1000,10 @@ impl Renderer<'_> {
         }
     }
 
-    fn create_fragment_state<'a>(
-        shader: &'a wgpu::ShaderModule,
-        targets: &'a [Option<wgpu::ColorTargetState>],
-    ) -> Option<wgpu::FragmentState<'a>> {
+    pub fn create_fragment_state<'b>(
+        shader: &'b wgpu::ShaderModule,
+        targets: &'b [Option<wgpu::ColorTargetState>],
+    ) -> Option<wgpu::FragmentState<'b>> {
         Some(wgpu::FragmentState {
             module: &shader,
             entry_point: Some("fs_main"),
@@ -985,7 +1012,7 @@ impl Renderer<'_> {
         })
     }
 
-    fn create_primitive_state() -> wgpu::PrimitiveState {
+    pub fn create_primitive_state() -> wgpu::PrimitiveState {
         return wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
@@ -997,13 +1024,56 @@ impl Renderer<'_> {
         };
     }
 
-    fn create_depth_stencil_state(format: wgpu::TextureFormat) -> Option<wgpu::DepthStencilState> {
+    pub fn create_depth_stencil_state(
+        format: wgpu::TextureFormat,
+    ) -> Option<wgpu::DepthStencilState> {
         Some(wgpu::DepthStencilState {
             format: format,
             depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_compare: wgpu::CompareFunction::LessEqual,
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         })
+    }
+}
+
+/// private impl
+impl Renderer<'_> {
+    fn create_adapter(instance: &wgpu::Instance, surface: &wgpu::Surface) -> wgpu::Adapter {
+        let request = instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: Some(&surface),
+            force_fallback_adapter: false,
+        });
+
+        match block_on(request) {
+            Some(adapter) => {
+                info!("Adapter: {:?}", adapter.get_info());
+                adapter
+            }
+            None => {
+                error!("Failed to find a suitable adapter");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    fn create_device_and_queue(adapter: &wgpu::Adapter) -> (wgpu::Device, wgpu::Queue) {
+        let request = adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::empty(),
+                ..Default::default()
+            },
+            None,
+        );
+
+        match block_on(request) {
+            Ok(n) => n,
+            Err(e) => {
+                error!("Failed to create device and queue: {:?}", e);
+                std::process::exit(1);
+            }
+        }
     }
 }
